@@ -127,6 +127,37 @@ The buttons at the top of the editor grab a region, window or screen, make a
 code card, or open a file. A code card takes the primary selection, or the
 clipboard if nothing is highlighted.
 
+### Recording
+
+Right-click the Postcard bar button and choose **Record region** or **Record
+screen**. Region lets you select an area (or a window's current rectangle);
+screen records the focused monitor. A three-second countdown follows the
+selection. The editor closes while recording. The bar shows a stop button
+and elapsed time: click it to stop or cancel the countdown. Press Esc to
+cancel the region picker.
+
+Recordings are silent, 30 fps H.264 MP4 files, saved directly to
+`$OMARCHY_SCREENRECORD_DIR`, else your XDG Videos directory, else `~/Videos`.
+A notification confirms the saved path. Video styling, playback in the editor,
+and audio are not included; screenshot framing and annotations do not apply
+to recordings. A selected window's rectangle stays fixed if the window moves.
+
+Postcard stops only its own recorder. Closing the editor does not stop a
+recording; use the bar or `stopRecording`. Shell shutdown or plugin unload
+closes the control pipe and asks the recorder to finish saving. Nonempty partial
+files are kept if recording fails, with their path in the error message.
+
+```sh
+omarchy-shell shell call tahayvr.postcard record region
+omarchy-shell shell call tahayvr.postcard record fullscreen
+omarchy-shell shell call tahayvr.postcard stopRecording ''
+omarchy-shell shell call tahayvr.postcard info ''
+```
+
+Start one recording at a time. Calls answer immediately; wait for `recording`
+to become false in `info`, then check `recordingState` (`saved`, `cancelled`, or
+`error`), `lastRecording` (last successful path), and `recordingError`.
+
 ### Keys
 
 | Key                                              | Action                                                                  |
@@ -328,6 +359,7 @@ All of these ship with Omarchy:
 - `wl-clipboard`
 - `python-gobject`
 - `xdg-desktop-portal`
+- `gpu-screen-recorder`, `ffmpeg` (including `ffprobe`) and Python 3 for recording
 
 Postcards are read from and saved to the directory Omarchy uses
 (`$OMARCHY_SCREENSHOT_DIR`, else `$XDG_PICTURES_DIR`, else `~/Pictures`) as

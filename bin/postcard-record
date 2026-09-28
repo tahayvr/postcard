@@ -1,0 +1,198 @@
+#!/usr/bin/env python3
+"""One owned recording session. JSON events out; 'stop' or EOF on stdin stops it.
+
+The editor can disappear without interrupting capture. Closing the controlling
+pipe (shell shutdown/reload) finalizes the video instead of orphaning a recorder.
+"""
+import argparse
+import fcntl
+import json
+import os
+from pathlib import Path
+import re
+import signal
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+
+
+def emit(state, **fields):
+    try:
+        os.write(sys.stdout.fileno(), (json.dumps(dict(state=state, **fields)) + "\n").encode())
+    except BrokenPipeError:
+        pass
+
+
+class Session:
+    def __init__(self):
+        self.stop = threading.Event()
+        self.child = None
+
+    def controls(self):
+        pending = b""
+        while True:
+            chunk = os.read(sys.stdin.fileno(), 1024)
+            if not chunk:
+                break
+            pending += chunk
+            if b"stop" in [line.strip() for line in pending.split(b"\n")[:-1]]:
+                break
+            pending = pending.rsplit(b"\n", 1)[-1]
+        self.stop.set()
+
+    def finish_child(self, sig=signal.SIGINT):
+        child = self.child
+        if child is None or child.poll() is not None:
+            return
+        try:
+            os.killpg(child.pid, sig)
+        except ProcessLookupError:
+            return
+        try:
+            child.wait(timeout=20)
+        except subprocess.TimeoutExpired:
+            os.killpg(child.pid, signal.SIGKILL)
+            child.wait()
+            raise RuntimeError("Recorder did not stop; the partial MP4 has been kept")
+
+    def target(self, mode):
+        command = (["omarchy-hyprland-monitor-focused"] if mode == "fullscreen"
+                   else ["omarchy-capture-region", "smart", "--match-monitor"])
+        # Never let the picker inherit our control pipe (slurp reads stdin).
+        self.child = subprocess.Popen(command, stdin=subprocess.DEVNULL,
+                                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                      start_new_session=True)
+        while True:
+            try:
+                output, _ = self.child.communicate(timeout=0.1)
+                break
+            except subprocess.TimeoutExpired:
+                if self.stop.is_set():
+                    self.finish_child(signal.SIGTERM)
+                    return None
+        if self.stop.is_set():
+            return None
+        if self.child.returncode:
+            if mode == "fullscreen":
+                raise RuntimeError("Could not find the focused monitor")
+            return None
+        target = output.decode().strip()
+        if mode == "fullscreen":
+            if not target:
+                raise RuntimeError("No focused monitor")
+            return target
+        if target.startswith("monitor:") and target[8:]:
+            return target[8:]
+        match = re.fullmatch(r"(-?\d+),(-?\d+)\s+(\d+)x(\d+)", target)
+        if not match:
+            raise RuntimeError("Could not read the selected region")
+        x, y, w, h = match.groups()
+        if int(w) < 2 or int(h) < 2:
+            raise RuntimeError("Select a region at least two pixels wide and tall")
+        # Logical coordinates, including negative origins, as used by Omarchy.
+        return f"{w}x{h}+{x}+{y}"
+
+    def record(self, mode, delay, directory):
+        emit("selecting")
+        target = self.target(mode)
+        if target is None:
+            emit("cancelled")
+            return
+        for remaining in range(delay, 0, -1):
+            emit("countdown", remaining=remaining)
+            if self.stop.wait(1):
+                emit("cancelled")
+                return
+        if self.stop.is_set():
+            emit("cancelled")
+            return
+        directory.mkdir(parents=True, exist_ok=True)
+        fd, name = tempfile.mkstemp(prefix=time.strftime("postcard-%Y-%m-%d_%H-%M-%S-"),
+                                    suffix=".mp4", dir=directory)
+        os.close(fd)
+        path = Path(name)
+        emit("starting", path=name)
+        # A file avoids deadlocking on a full stderr pipe during long captures.
+        with tempfile.TemporaryFile() as log:
+            try:
+                self.child = subprocess.Popen(
+                    ["gpu-screen-recorder", "-w", target, "-k", "h264", "-f", "30",
+                     "-fm", "cfr", "-fallback-cpu-encoding", "yes", "-o", name],
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=log,
+                    start_new_session=True)
+                deadline = time.monotonic() + 15
+                while self.child.poll() is None and path.stat().st_size == 0:
+                    if self.stop.wait(0.1):
+                        break
+                    if time.monotonic() > deadline:
+                        raise RuntimeError("Recorder did not start within 15 seconds")
+                if self.child.poll() is None and not self.stop.is_set():
+                    emit("recording", path=name)
+                    while self.child.poll() is None and not self.stop.wait(0.1):
+                        pass
+                emit("stopping")
+                self.finish_child()
+                # SIGINT is the recorder's graceful save signal. Validate the
+                # result, including when another desktop control stopped it.
+                probe = subprocess.run(
+                    ["ffprobe", "-v", "error", "-select_streams", "v:0",
+                     "-show_entries", "stream=codec_type", "-of", "csv=p=0", name],
+                    capture_output=True, timeout=15)
+                if self.child.returncode not in (0, -signal.SIGINT, 128 + signal.SIGINT) or probe.returncode or probe.stdout.strip() != b"video":
+                    log.seek(0, os.SEEK_END)
+                    log.seek(max(0, log.tell() - 2000))
+                    detail = log.read().decode(errors="replace").strip()
+                    raise RuntimeError("Recording failed" + (": " + detail if detail else ""))
+                emit("saved", path=name)
+            except Exception as error:
+                raise RuntimeError(f"{error}. Output: {name}") from error
+            finally:
+                self.finish_child()
+                if path.exists() and path.stat().st_size == 0:
+                    path.unlink()
+
+
+def output_directory():
+    if os.environ.get("OMARCHY_SCREENRECORD_DIR"):
+        return Path(os.environ["OMARCHY_SCREENRECORD_DIR"]).expanduser().absolute()
+    if os.environ.get("XDG_VIDEOS_DIR"):
+        return Path(os.environ["XDG_VIDEOS_DIR"]).expanduser().absolute()
+    try:
+        result = subprocess.run(["xdg-user-dir", "VIDEOS"], capture_output=True,
+                                text=True, timeout=5)
+        if result.returncode == 0 and result.stdout.strip():
+            return Path(result.stdout.strip()).absolute()
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return Path.home() / "Videos"
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("mode", choices=["region", "fullscreen"])
+    parser.add_argument("--delay", type=int, default=3, choices=range(61))
+    args = parser.parse_args()
+    session = Session()
+    signal.signal(signal.SIGTERM, lambda *_: session.stop.set())
+    signal.signal(signal.SIGINT, lambda *_: session.stop.set())
+    threading.Thread(target=session.controls, daemon=True).start()
+    try:
+        runtime = Path(os.environ.get("XDG_RUNTIME_DIR", tempfile.gettempdir()))
+        with (runtime / f"postcard-record-{os.getuid()}.lock").open("a") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise RuntimeError("A Postcard recording is already running")
+            session.record(args.mode, args.delay, output_directory())
+        return 0
+    except Exception as error:
+        emit("error", message=str(error))
+        return 1
+    finally:
+        session.finish_child(signal.SIGTERM)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

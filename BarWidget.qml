@@ -24,7 +24,11 @@ BarWidget {
         { glyph: "⬜",       label: "Screen", mode: "fullscreen", delayed: true,
           tip: "Capture the whole screen" },
         { glyph: "‹›", label: "Code",   payload: '{"code":true}',
-          tip: "Capture selected text" }
+          tip: "Capture selected text" },
+        { glyph: "●", label: "Record region", payload: '{"record":"region"}',
+          tip: "Select an area, then record a silent MP4 after 3 seconds" },
+        { glyph: "●", label: "Record screen", payload: '{"record":"fullscreen"}',
+          tip: "Record the focused screen as a silent MP4 after 3 seconds" }
     ]
 
     implicitWidth: button.implicitWidth
@@ -41,18 +45,35 @@ BarWidget {
         root.summon(payload);
     }
 
+    property double now: Date.now()
+    Timer {
+        interval: 1000
+        repeat: true
+        running: Recording.state === "recording"
+        onTriggered: root.now = Date.now()
+    }
+    Connections {
+        target: Recording
+        function onStateChanged() { root.now = Date.now(); }
+    }
+
     WidgetButton {
         id: button
         anchors.centerIn: parent
         bar: root.bar
-        text: root.counting ? String(CaptureDelay.remaining) : root.icon
-        tooltipText: root.counting ? "Capturing soon, click to cancel" : "Postcard"
-        active: root.counting
-        useActiveColor: root.counting
+        text: Recording.state === "recording" ? "■ " + Recording.elapsed(root.now)
+              : Recording.state === "countdown" ? "● " + Recording.remaining
+              : Recording.state === "stopping" ? "Saving…"
+              : Recording.active ? "■" : root.counting ? String(CaptureDelay.remaining) : root.icon
+        tooltipText: Recording.active ? (Recording.state === "recording" ? "Stop recording" : "Cancel recording")
+                     : root.counting ? "Capturing soon, click to cancel" : "Postcard"
+        active: Recording.active || root.counting
+        useActiveColor: Recording.active || root.counting
         onPressed: function (mouseButton) {
             // Hiding is what cancels a pending capture, and keeps the
             // shell's idea of whether the overlay is open in step.
-            if (root.counting) root.bar.shell.hide(root.moduleName);
+            if (Recording.active) { menu.open = false; Recording.stopRequested(); }
+            else if (root.counting) root.bar.shell.hide(root.moduleName);
             else if (mouseButton === Qt.RightButton) menu.open = !menu.open;
             else if (mouseButton === Qt.MiddleButton) root.summon('{"code":true}');
             else root.summon('{"capture":"smart"}');

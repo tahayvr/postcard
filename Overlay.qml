@@ -102,10 +102,12 @@ Item {
     }
 
     function open(payloadJson) {
+        if (Recording.active || recordProc.running || recordHide.running) return "busy";
         if (capturing || captureProc.running) return "busy";
         var payload = {};
         try { payload = payloadJson ? JSON.parse(payloadJson) : {}; } catch (e) { payload = {}; }
         if (!payload || typeof payload !== "object") payload = {};
+        if (payload.record) return record(String(payload.record));
 
         opened = true;
 
@@ -236,6 +238,8 @@ Item {
             // busy covers everything a script has to wait out before the
             // next call, not only what the editor shows as working.
             kind: doc.kind, opened: opened, capturing: capturing, picking: picking,
+            recording: Recording.active, recordingState: Recording.state,
+            lastRecording: Recording.lastSaved, recordingError: Recording.error,
             busy: editor.busy || sheetProc.running || sizeProc.running || relayout.running
                   || textProc.running || ocrProc.running,
             hasContent: doc.hasContent,
@@ -632,9 +636,83 @@ Item {
         }
     }
 
+    // Recording saves a plain MP4 independently of the still-image document.
+    function record(mode) {
+        if (mode !== "region" && mode !== "fullscreen") return "bad mode";
+        if (Recording.active || recordProc.running || recordHide.running || capturing
+                || picking || eyedropping || editor.busy || deliver.running) return "busy";
+        Recording.error = "";
+        Recording.state = "selecting";
+        recordProc.mode = mode;
+        // Keep the existing document, but leave the captured desktop unobscured.
+        dismiss();
+        recordHide.restart();
+        return "ok";
+    }
+
+    function stopRecording() {
+        if (!Recording.active) return "not recording";
+        if (recordHide.running) {
+            recordHide.stop();
+            Recording.state = "cancelled";
+        } else if (recordProc.running) {
+            recordProc.write("stop\n");
+            Recording.state = "stopping";
+        }
+        return "ok";
+    }
+
+    Connections {
+        target: Recording
+        function onStopRequested() { root.stopRecording(); }
+    }
+
+    Timer {
+        id: recordHide
+        interval: 180
+        onTriggered: recordProc.running = true
+    }
+
+    Process {
+        id: recordProc
+        property string mode: "region"
+        command: ["python3", root.pluginDir + "bin/postcard-record", mode]
+        stdinEnabled: true
+        stdout: SplitParser {
+            onRead: function (data) {
+                var event;
+                try { event = JSON.parse(data); } catch (e) { return; }
+                if (event.state === "countdown") Recording.remaining = event.remaining;
+                if (event.state === "recording") Recording.startedAt = Date.now();
+                if (event.state === "saved") {
+                    Recording.lastSaved = event.path;
+                    recordNotice.command = ["omarchy-notification-send", "Postcard recording saved", event.path];
+                    recordNotice.running = true;
+                }
+                if (event.state === "error") {
+                    Recording.error = event.message;
+                    recordNotice.command = ["omarchy-notification-send", "Postcard recording failed", event.message];
+                    recordNotice.running = true;
+                }
+                // Publish the state last, so observers see the matching path,
+                // timer origin and error as soon as they see the transition.
+                Recording.state = event.state;
+            }
+        }
+        onExited: function (exitCode, exitStatus) {
+            if (Recording.active) {
+                Recording.error = "Recording helper exited unexpectedly";
+                Recording.state = "error";
+                recordNotice.command = ["omarchy-notification-send", "Postcard recording failed", Recording.error];
+                recordNotice.running = true;
+            }
+        }
+    }
+    Process { id: recordNotice }
+
     // With append the shot goes beside the ones already on the card.
     function capture(mode, delay, append) {
-        if (capturing || captureProc.running || picking || eyedropping || editor.busy) return "busy";
+        if (Recording.active || capturing || captureProc.running || picking || eyedropping || editor.busy) return "busy";
         captureProc.append = !!append && doc.hasContent && doc.kind === "shot";
         var request = Model.captureRequest(mode, delay);
         if (request.error) return request.error;
@@ -1337,7 +1415,7 @@ Item {
 
     PanelWindow {
         id: window
-        visible: root.opened && !root.capturing && !root.picking && !root.eyedropping
+        visible: root.opened && !Recording.active && !root.capturing && !root.picking && !root.eyedropping
         color: "transparent"
 
         // No anchors: the compositor centres a layer that has none.

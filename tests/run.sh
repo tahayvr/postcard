@@ -9,6 +9,9 @@ fail=0
 echo "== JavaScript unit tests"
 node "$here/run.js" || fail=1
 
+echo "== recording lifecycle"
+python3 "$here/recording.py" || fail=1
+
 echo "== shell scripts"
 for f in "$root"/bin/postcard-*; do
   case "$(head -c 40 "$f")" in *bash*) bash -n "$f" || fail=1 ;; *python3*) /usr/bin/python3 -B -m py_compile "$f" && rm -rf "$root/bin/__pycache__" || fail=1 ;; esac
