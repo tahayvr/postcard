@@ -1373,6 +1373,16 @@ Item {
             anchors.fill: parent
             focus: true
 
+            // A window shortcut also works when a child text field has focus.
+            // Never claim it across the other windows in the shell process.
+            Shortcut {
+                sequence: "Meta+W"
+                context: Qt.WindowShortcut
+                enabled: window.visible && !editor.dragActive
+                autoRepeat: false
+                onActivated: root.dismiss()
+            }
+
             Editor {
                 id: editor
                 anchors.fill: parent

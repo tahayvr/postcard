@@ -144,6 +144,7 @@ clipboard if nothing is highlighted.
 | Arrow keys, `Shift`+arrows                       | Move the selected annotations 1px, or 10px                              |
 | `Enter`                                          | Finish typing a text label                                              |
 | `Esc`                                            | Deselect, then close                                                    |
+| `Super+W`                                        | Close the focused editor, including from text fields                    |
 
 ### Scripting
 
