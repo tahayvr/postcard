@@ -240,7 +240,8 @@ Item {
                   || textProc.running || ocrProc.running,
             hasContent: doc.hasContent,
             // Rendering is `busy`; encoding and writing the file comes after.
-            delivering: deliver.running || dragFile.running, lastSaved: root.lastSaved,
+            delivering: deliver.running || dragFile.running || shotCopy.running,
+            lastSaved: root.lastSaved,
             shotPath: doc.shotPath, shotWidth: doc.shotWidth, shotHeight: doc.shotHeight,
             outWidth: doc.outWidth, outHeight: doc.outHeight, annotations: doc.annotations.count,
             preset: doc.activePresetEntry.name, presetModified: doc.presetModified,
@@ -615,8 +616,12 @@ Item {
                     doc.sheet = Model.sheetLayout(doc.slots, root.layoutOptions());
                 }
                 editor.statusText = implicitWidth + "×" + implicitHeight + " loaded";
+                // Started with the size, so a script waiting for hasContent
+                // finds it delivering until the copy is done.
+                if (shotCopy.path === doc.shotPath) shotCopy.running = true;
             } else if (status === Image.Error) {
                 editor.statusText = "Could not open that image";
+                shotCopy.path = "";
             }
         }
     }
@@ -917,13 +922,10 @@ Item {
                     if (captureProc.append) {
                         root.addShot(path);
                     } else {
-                        root.loadShot(path);
                         // The plain shot, for pasting straight away; a shot
                         // added beside others is part of a card being made.
-                        if (doc.captureCopies) {
-                            shotCopy.path = path;
-                            shotCopy.running = true;
-                        }
+                        shotCopy.path = doc.captureCopies ? path : "";
+                        root.loadShot(path);
                     }
                 } else if (!doc.hasContent) {
                     root.dismiss();    // cancelled with nothing to fall back to
@@ -935,13 +937,15 @@ Item {
         }
     }
 
-    // Apart from deliver, so a save still running is not cut across.
+    // A capture to copy as it is, once it has loaded. Apart from deliver,
+    // whose args a save may still be using.
     Process {
         id: shotCopy
         property string path: ""
         command: ["bash", root.pluginDir + "bin/postcard-deliver", "shot", path]
         stdout: StdioCollector {
             onStreamFinished: {
+                shotCopy.path = "";
                 var msg = text.trim();
                 if (msg.length) editor.statusText = msg;
             }
