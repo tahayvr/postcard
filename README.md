@@ -88,6 +88,8 @@ the picture that should not be public.
 **Output**
 
 - Clipboard or disk, PNG or JPEG, at 1x, 2x or 3x
+- Optionally, every capture goes onto the clipboard as it is taken, for pasting
+  without editing (Settings)
 - The preview is the file
 
 ## Install

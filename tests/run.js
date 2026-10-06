@@ -969,7 +969,9 @@ test("settings come back off disk as the kind of value they should be", () => {
     eq(Model.cleanSettings(null).saveCopies, true, "no file keeps today's behaviour");
     eq(Model.cleanSettings({ saveCopies: false }).saveCopies, false);
     eq(Model.cleanSettings({ saveCopies: "no" }).saveCopies, true, "a damaged value falls back");
-    eq(Object.keys(Model.cleanSettings({ stray: 1 })).join(), "saveCopies", "nothing unknown is kept");
+    eq(Model.cleanSettings(null).captureCopies, false, "a capture is not copied unless asked");
+    eq(Model.cleanSettings({ captureCopies: true }).captureCopies, true);
+    eq(Object.keys(Model.cleanSettings({ stray: 1 })).join(), "saveCopies,captureCopies", "nothing unknown is kept");
 });
 
 test("settings come back off disk at this version", () => {
@@ -985,7 +987,7 @@ test("settings come back off disk at this version", () => {
     eq(read(null).settings.saveCopies, true, "no file is the defaults");
     eq(read({ version: "2" }).from, 0, "a version that is not a number is not trusted");
     const file = Model.configFile("settings", Model.cleanSettings({ saveCopies: false, stray: 1 }));
-    eq(Object.keys(file).join(), "version,saveCopies", "version first, and nothing unknown");
+    eq(Object.keys(file).join(), "version,saveCopies,captureCopies", "version first, and nothing unknown");
 });
 
 test("every config file is versioned the same way", () => {

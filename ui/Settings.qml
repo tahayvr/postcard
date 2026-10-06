@@ -25,6 +25,13 @@ Item {
                 onToggled: function (v) { prefs.doc.saveCopies = v; }
             }
 
+            Toggle {
+                label: "Copy to the clipboard when capturing"
+                hint: "A new screenshot goes onto the clipboard as it is, before any editing"
+                checked: prefs.doc.captureCopies
+                onToggled: function (v) { prefs.doc.captureCopies = v; }
+            }
+
             Text {
                 width: parent.width
                 text: "Saved to " + prefs.saveDir

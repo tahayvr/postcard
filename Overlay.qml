@@ -845,6 +845,7 @@ Item {
     Connections {
         target: doc
         function onSaveCopiesChanged() { if (root.settingsReady) settingsSave.restart(); }
+        function onCaptureCopiesChanged() { if (root.settingsReady) settingsSave.restart(); }
     }
 
     // preset <name>: put a saved preset on the card, by name or id, or
@@ -913,13 +914,36 @@ Item {
                 var path = lines[lines.length - 1].trim();
                 root.capturing = false;
                 if (path.length > 0 && path.indexOf("/") === 0) {
-                    if (captureProc.append) root.addShot(path); else root.loadShot(path);
+                    if (captureProc.append) {
+                        root.addShot(path);
+                    } else {
+                        root.loadShot(path);
+                        // The plain shot, for pasting straight away; a shot
+                        // added beside others is part of a card being made.
+                        if (doc.captureCopies) {
+                            shotCopy.path = path;
+                            shotCopy.running = true;
+                        }
+                    }
                 } else if (!doc.hasContent) {
                     root.dismiss();    // cancelled with nothing to fall back to
                 } else {
                     editor.statusText = "Capture cancelled";
                 }
                 root.focusEditor();
+            }
+        }
+    }
+
+    // Apart from deliver, so a save still running is not cut across.
+    Process {
+        id: shotCopy
+        property string path: ""
+        command: ["bash", root.pluginDir + "bin/postcard-deliver", "shot", path]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var msg = text.trim();
+                if (msg.length) editor.statusText = msg;
             }
         }
     }
