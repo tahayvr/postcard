@@ -17,13 +17,13 @@ BarWidget {
     // Right-click opens this. Left and middle click stay direct: the two
     // things worth reaching for without reading anything.
     readonly property var actions: [
-        { glyph: "⬚",       label: "Region", payload: '{"capture":"region"}',
+        { glyph: "\u{F0489}", label: "Region", payload: '{"capture":"region"}',
           tip: "Capture a region" },
-        { glyph: "◰",       label: "Window", payload: '{"capture":"windows"}',
+        { glyph: "\uf2d0",    label: "Window", payload: '{"capture":"windows"}',
           tip: "Capture a window" },
-        { glyph: "⬜",       label: "Screen", mode: "fullscreen", delayed: true,
+        { glyph: "\u{F0379}", label: "Screen", mode: "fullscreen", delayed: true,
           tip: "Capture the whole screen" },
-        { glyph: "‹›", label: "Code",   payload: '{"code":true}',
+        { glyph: "\uf121",    label: "Code",   payload: '{"code":true}',
           tip: "Capture selected text" }
     ]
 
@@ -194,10 +194,10 @@ BarWidget {
 
                                 Text {
                                     anchors.verticalCenter: parent.verticalCenter
-                                    text: "◷"
+                                    text: "\uf017"
                                     color: CaptureDelay.seconds ? Color.accent : Qt.darker(root.fg, 1.3)
                                     font.family: root.face
-                                    font.pixelSize: Style.font.body
+                                    font.pixelSize: Style.font.icon
                                 }
                                 Text {
                                     anchors.verticalCenter: parent.verticalCenter

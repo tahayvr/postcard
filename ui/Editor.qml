@@ -192,7 +192,7 @@ Rectangle {
                 onClicked: editor.panel = editor.panel === "about" ? "" : "about"
             }
             IconButton {
-                glyph: "\u2715"
+                glyph: "\u{F0156}"
                 flat: true
                 tip: "Close (Esc)"
                 onClicked: editor.closeRequested()
@@ -573,7 +573,7 @@ Rectangle {
             visible: doc.hasContent
 
             IconButton {
-                glyph: "\u21ba"
+                glyph: "\u{F099B}"
                 tip: "Reset styling"
                 flat: true
                 onClicked: doc.reset()
@@ -596,7 +596,7 @@ Rectangle {
                 Drag.onDragFinished: editor.draggingOut = false
             }
             IconButton {
-                glyph: "\u2398"
+                glyph: "\uf0c5"
                 label: editor.busy ? "Working\u2026" : "Copy"
                 onClicked: editor.copyRequested()
             }
@@ -607,7 +607,7 @@ Rectangle {
                 onClicked: editor.saveAsRequested()
             }
             IconButton {
-                glyph: "\u2193"
+                glyph: "\uf019"
                 label: "Save"
                 tip: "Save to " + editor.saveDir + " (Ctrl+S)"
                 primary: true

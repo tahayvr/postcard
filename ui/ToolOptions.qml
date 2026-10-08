@@ -161,7 +161,7 @@ Loader {
                     }
                 }
             }
-            IconButton { glyph: ""; label: "File"; tip: "Open a file"; onClicked: opts.openRequested() }
+            IconButton { glyph: "\uf1c5"; label: "File"; tip: "Open a file"; onClicked: opts.openRequested() }
         }
     }
 
@@ -234,7 +234,7 @@ Loader {
 
                 IconButton {
                     id: addInk
-                    glyph: "+"
+                    glyph: "\uf067"
                     tip: "Pick your own color"
                     active: inkPopup.opened
                     implicitWidth: Ui.swatch
