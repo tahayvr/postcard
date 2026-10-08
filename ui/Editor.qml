@@ -77,10 +77,11 @@ Rectangle {
     }
 
     readonly property Item exportTarget: grabRoot
-    readonly property string repoUrl: "https://github.com/tahayvr/postcard"
-    // The settings take the inspector's place while they are open.
-    property bool settingsOpen: false
+    property var manifest: null
+    // "settings" or "about" take the inspector's place while they are open.
+    property string panel: ""
     readonly property Item sidePanel: settingsPanel.visible ? settingsPanel
+                                    : aboutPanel.visible ? aboutPanel
                                     : inspector.visible ? inspector : null
     // True from the moment the picture is ready until the drag ends: the
     // backdrop goes first, and the drag starts once it has.
@@ -173,20 +174,16 @@ Rectangle {
             IconButton {
                 glyph: "\uf013"
                 flat: true
-                active: editor.settingsOpen
+                active: editor.panel === "settings"
                 tip: "Settings"
-                onClicked: editor.settingsOpen = !editor.settingsOpen
+                onClicked: editor.panel = editor.panel === "settings" ? "" : "settings"
             }
-            // The overlay covers the screen, so the browser it opens would
-            // sit behind it; close on the way out.
             IconButton {
-                glyph: "\uf09b"
+                glyph: "\uf05a"
                 flat: true
-                tip: "Postcard on GitHub"
-                onClicked: {
-                    Qt.openUrlExternally(editor.repoUrl);
-                    editor.closeRequested();
-                }
+                active: editor.panel === "about"
+                tip: "About, help and keys"
+                onClicked: editor.panel = editor.panel === "about" ? "" : "about"
             }
             IconButton {
                 glyph: "\u2715"
@@ -484,7 +481,7 @@ Rectangle {
         systemThemes: editor.systemThemes
         anchors { top: header.bottom; bottom: footer.top; right: parent.right }
         width: Style.space(300)
-        visible: doc.hasContent && !editor.settingsOpen
+        visible: doc.hasContent && editor.panel === ""
         onCopyTextRequested: editor.copyTextRequested()
         onLogoRequested: editor.logoRequested()
         onShotRequested: function (action, id) { editor.shotRequested(action, id); }
@@ -497,7 +494,16 @@ Rectangle {
         saveDir: editor.saveDir
         anchors { top: header.bottom; bottom: footer.top; right: parent.right }
         width: inspector.width
-        visible: editor.settingsOpen
+        visible: editor.panel === "settings"
+    }
+
+    About {
+        id: aboutPanel
+        manifest: editor.manifest
+        anchors { top: header.bottom; bottom: footer.top; right: parent.right }
+        width: inspector.width
+        visible: editor.panel === "about"
+        onLinkOpened: editor.closeRequested()
     }
 
     Rectangle {

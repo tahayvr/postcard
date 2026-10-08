@@ -129,6 +129,9 @@ The buttons at the top of the editor grab a region, window or screen, make a
 code card, or open a file. A code card takes the primary selection, or the
 clipboard if nothing is highlighted.
 
+The ⓘ button beside Settings lists these keys, with links to this guide,
+to report a problem, and to sponsor Postcard.
+
 ### Keys
 
 | Key                                              | Action                                                                  |

@@ -1240,5 +1240,13 @@ test("presets keep their order, and are found by id or by name", () => {
     eq(Model.forgetPreset(list, "a").map(p => p.id), ["b"]);
 });
 
+test("the README's Keys table is the keys the About panel lists", () => {
+    const readme = fs.readFileSync(path.join(__dirname, "..", "README.md"), "utf8");
+    const table = readme.split("### Keys")[1].split("\n###")[0];
+    const rows = table.split("\n").filter(l => l.startsWith("|")).slice(2)
+        .map(l => l.slice(1, -1).split("|").map(c => c.trim()));
+    eq(rows, Model.KEYS.map(k => k.slice()));
+});
+
 console.log(passed + " passed, " + failed + " failed");
 process.exit(failed ? 1 : 0);
