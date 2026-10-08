@@ -354,14 +354,43 @@ Item {
                 }
             }
 
+            // A line is selected along itself, the way design apps show it:
+            // a box around it would read as something to resize like a box.
             Rectangle {
                 anchors.fill: parent
                 anchors.margins: -4 / anno.viewScale
                 visible: anno.editable && entry.selected && !anno.doc.exporting
+                         && entry.a.kind !== "arrow"
                 color: "transparent"
                 border.color: Color.accent
                 border.width: anno.hairline
                 radius: 0
+            }
+
+            Shape {
+                id: trace
+                anchors.fill: parent
+                visible: anno.editable && entry.selected && !anno.doc.exporting
+                         && entry.a.kind === "arrow"
+                preferredRendererType: Shape.CurveRenderer
+                readonly property var g: entry.a.kind === "arrow"
+                    ? Model.arrowShape(entry.a.w, entry.a.h, entry.a.style,
+                                       Math.max(entry.stroke * 3.2, 10))
+                    : null
+                ShapePath {
+                    strokeColor: Color.accent
+                    strokeWidth: anno.hairline
+                    capStyle: ShapePath.RoundCap
+                    fillColor: "transparent"
+                    startX: trace.g ? trace.g.tailX : 0
+                    startY: trace.g ? trace.g.tailY : 0
+                    PathQuad {
+                        x: trace.g ? trace.g.tipX : 0
+                        y: trace.g ? trace.g.tipY : 0
+                        controlX: trace.g ? trace.g.cx : 0
+                        controlY: trace.g ? trace.g.cy : 0
+                    }
+                }
             }
 
             MouseArea {
@@ -487,6 +516,8 @@ Item {
                     y: (knob.spot ? knob.spot.y - entry.originY : 0) - height / 2
                     width: !knob.side ? anno.handle : knob.across ? anno.handle * 2.4 : anno.handle * 0.7
                     height: !knob.side ? anno.handle : knob.across ? anno.handle * 0.7 : anno.handle * 2.4
+                    // The ends of a line are points, not corners.
+                    radius: entry.a.kind === "arrow" ? width / 2 : 0
                     color: Color.accent
                     border.width: anno.hairline
                     border.color: Qt.rgba(0, 0, 0, 0.55)
