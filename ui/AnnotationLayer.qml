@@ -30,6 +30,13 @@ Item {
     readonly property real hairline: Math.max(1, 1.5 / anno.viewScale)
     readonly property real handle: 9 / anno.viewScale
     readonly property real slop: 6 / anno.viewScale
+    // A box or ellipse is framed by one screen pixel, set this far out from
+    // its stroke so the two never sit on each other.
+    readonly property real px: 1 / anno.viewScale
+    readonly property real frameGap: 2 / anno.viewScale
+    // From the edge of the shape to the middle of that frame line, where its
+    // corner handles are centred.
+    readonly property real frameOut: anno.frameGap + anno.px / 2
 
     clip: false
 
@@ -56,6 +63,9 @@ Item {
                                          ? a.color : anno.doc.inkColor
             readonly property real stroke: Math.max(1, a.width)
             readonly property bool sizedByContent: a.kind === "text"
+            // Drawn with a frame and white corners, and resized from anywhere
+            // along a side rather than by a handle on it.
+            readonly property bool framed: a.kind === "box" || a.kind === "ellipse"
             // Where the mark sits by the model. During a move the item is
             // dragged away from this and the model only catches up on
             // release, so anything placed inside the item measures from here
@@ -358,12 +368,12 @@ Item {
             // a box around it would read as something to resize like a box.
             Rectangle {
                 anchors.fill: parent
-                anchors.margins: -4 / anno.viewScale
+                anchors.margins: entry.framed ? -(anno.frameGap + anno.px) : -4 / anno.viewScale
                 visible: anno.editable && entry.selected && !anno.doc.exporting
                          && entry.a.kind !== "arrow"
                 color: "transparent"
                 border.color: Color.accent
-                border.width: anno.hairline
+                border.width: entry.framed ? anno.px : anno.hairline
                 radius: 0
             }
 
@@ -498,6 +508,53 @@ Item {
                 onReleased: anno.doc.annotationsEdited()
             }
 
+            // A framed shape's sides are pulled from anywhere along the frame,
+            // outside the stroke, which is left to moving it. The corner
+            // handles are laid over the ends of these.
+            Repeater {
+                model: ["t", "r", "b", "l"]
+                delegate: MouseArea {
+                    id: edge
+                    required property string modelData
+                    readonly property bool across: edge.modelData === "t" || edge.modelData === "b"
+                    readonly property real reach: anno.frameOut + anno.slop / 2
+                    property real offX: 0
+                    property real offY: 0
+
+                    visible: entry.framed && anno.editable && entry.alone && !anno.doc.exporting
+                    enabled: edge.visible
+                    x: edge.modelData === "r" ? entry.width : edge.modelData === "l" ? -edge.reach : 0
+                    y: edge.modelData === "b" ? entry.height : edge.modelData === "t" ? -edge.reach : 0
+                    width: edge.across ? entry.width : edge.reach
+                    height: edge.across ? edge.reach : entry.height
+                    cursorShape: edge.across ? Qt.SizeVerCursor : Qt.SizeHorCursor
+
+                    function edgeSpot() {
+                        var all = Model.resizeHandles(entry.a, entry.width, entry.height);
+                        for (var i = 0; i < all.length; i++)
+                            if (all[i].key === edge.modelData) return all[i];
+                        return null;
+                    }
+
+                    // Held where it was taken, so the side does not jump to
+                    // the pointer.
+                    onPressed: function (e) {
+                        anno.doc.selectedId = entry.a.uid;
+                        var p = mapToItem(anno, e.x, e.y), s = edge.edgeSpot();
+                        edge.offX = s ? p.x - s.x : 0;
+                        edge.offY = s ? p.y - s.y : 0;
+                    }
+                    onPositionChanged: function (e) {
+                        if (!pressed) return;
+                        var p = mapToItem(anno, e.x, e.y);
+                        anno.doc.updateAnnotation(entry.a.uid,
+                            Model.resizeAnnotation(entry.a, edge.modelData, p.x - edge.offX, p.y - edge.offY,
+                                                   entry.width, entry.height));
+                    }
+                    onReleased: anno.doc.annotationsEdited()
+                }
+            }
+
             // Corners and sides to pull it by, or the two ends of an arrow.
             // A fixed count, so a delegate is never rebuilt out from under a
             // drag. A text label's corners are where its text ends, which
@@ -510,21 +567,34 @@ Item {
                     readonly property var spot: Model.resizeHandles(entry.a, entry.width, entry.height)[knob.index] || null
                     readonly property bool side: knob.spot !== null && Model.isSideHandle(knob.spot.key)
                     readonly property bool across: knob.side && (knob.spot.key === "t" || knob.spot.key === "b")
+                    readonly property bool white: entry.framed || entry.a.kind === "arrow"
+                    // A framed shape's corners sit on its frame, outside the stroke.
+                    readonly property real outX: !entry.framed || !knob.spot ? 0
+                        : knob.spot.key.indexOf("l") !== -1 ? -anno.frameOut
+                        : knob.spot.key.indexOf("r") !== -1 ? anno.frameOut : 0
+                    readonly property real outY: !entry.framed || !knob.spot ? 0
+                        : knob.spot.key.indexOf("t") !== -1 ? -anno.frameOut
+                        : knob.spot.key.indexOf("b") !== -1 ? anno.frameOut : 0
+                    property real offX: 0
+                    property real offY: 0
 
                     // A side too short to hold a bar clear of its corners
-                    // is left to them.
+                    // is left to them; a framed shape's sides are its frame.
                     visible: knob.spot !== null && anno.editable && entry.alone
                              && !anno.doc.exporting
-                             && (!knob.side || Math.abs(knob.across ? entry.a.w : entry.a.h) > anno.handle * 5)
-                    x: (knob.spot ? knob.spot.x - entry.originX : 0) - width / 2
-                    y: (knob.spot ? knob.spot.y - entry.originY : 0) - height / 2
-                    width: !knob.side ? anno.handle : knob.across ? anno.handle * 2.4 : anno.handle * 0.7
-                    height: !knob.side ? anno.handle : knob.across ? anno.handle * 0.7 : anno.handle * 2.4
+                             && (!knob.side || (!entry.framed
+                                 && Math.abs(knob.across ? entry.a.w : entry.a.h) > anno.handle * 5))
+                    x: (knob.spot ? knob.spot.x - entry.originX : 0) + knob.outX - width / 2
+                    y: (knob.spot ? knob.spot.y - entry.originY : 0) + knob.outY - height / 2
+                    width: knob.white ? anno.handle * 0.9 : !knob.side ? anno.handle
+                         : knob.across ? anno.handle * 2.4 : anno.handle * 0.7
+                    height: knob.white ? anno.handle * 0.9 : !knob.side ? anno.handle
+                          : knob.across ? anno.handle * 0.7 : anno.handle * 2.4
                     // The ends of a line are points, not corners.
                     radius: entry.a.kind === "arrow" ? width / 2 : 0
-                    color: Color.accent
-                    border.width: anno.hairline
-                    border.color: Qt.rgba(0, 0, 0, 0.55)
+                    color: knob.white ? "white" : Color.accent
+                    border.width: knob.white ? anno.px : anno.hairline
+                    border.color: knob.white ? Color.accent : Qt.rgba(0, 0, 0, 0.55)
 
                     MouseArea {
                         anchors.fill: parent
@@ -539,14 +609,21 @@ Item {
                             return Qt.SizeAllCursor;
                         }
 
-                        onPressed: anno.doc.selectedId = entry.a.uid
+                        // Held where it was taken: a corner set out on the
+                        // frame would otherwise jump in by the gap.
+                        onPressed: function (e) {
+                            anno.doc.selectedId = entry.a.uid;
+                            var p = mapToItem(anno, e.x, e.y);
+                            knob.offX = knob.spot ? p.x - knob.spot.x : 0;
+                            knob.offY = knob.spot ? p.y - knob.spot.y : 0;
+                        }
                         onPositionChanged: function (e) {
                             if (!pressed || !knob.spot) return;
                             var p = mapToItem(anno, e.x, e.y);
                             // By uid, and through the document, which tells
                             // everything drawn from the model that it moved.
                             anno.doc.updateAnnotation(entry.a.uid,
-                                Model.resizeAnnotation(entry.a, knob.spot.key, p.x, p.y,
+                                Model.resizeAnnotation(entry.a, knob.spot.key, p.x - knob.offX, p.y - knob.offY,
                                                        entry.width, entry.height));
                         }
                         onReleased: {
