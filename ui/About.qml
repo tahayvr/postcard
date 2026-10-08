@@ -112,25 +112,25 @@ Flickable {
             }
         }
 
-        Column {
+        Rectangle {
             width: parent.width
-            spacing: Ui.row
+            height: 1
+            color: Ui.hairline
+        }
 
-            Heading { text: "Help" }
-            Row {
-                anchors.horizontalCenter: parent.horizontalCenter
-                spacing: Ui.gap
-                IconButton {
-                    glyph: "\uf02d"
-                    label: "Guide"
-                    tip: "How to use Postcard"
-                    onClicked: about.open(about.repoUrl + "#readme")
-                }
-                IconButton {
-                    glyph: "\uf188"
-                    label: "Report a problem"
-                    onClicked: about.open(about.repoUrl + "/issues/new")
-                }
+        Row {
+            anchors.horizontalCenter: parent.horizontalCenter
+            spacing: Ui.gap
+            IconButton {
+                glyph: "\uf02d"
+                label: "Guide"
+                tip: "How to use Postcard"
+                onClicked: about.open(about.repoUrl + "#readme")
+            }
+            IconButton {
+                glyph: "\uf188"
+                label: "Report a problem"
+                onClicked: about.open(about.repoUrl + "/issues/new")
             }
         }
 
