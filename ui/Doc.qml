@@ -52,6 +52,7 @@ QtObject {
     // Preferences, from Model.DEFAULT_SETTINGS; the overlay keeps them in
     // settings.json.
     property bool saveCopies: true
+    property bool captureCopies: false
     property var userGradients: []
 
     // Saved looks, kept on disk by the overlay like the colors; the one in
