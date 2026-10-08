@@ -314,13 +314,13 @@ Loader {
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: Ui.gap
                 IconButton {
-                    glyph: "□"
+                    glyph: "\u{F0763}"
                     label: "Rectangle"
                     active: opts.doc.spotShape === "rect"
                     onClicked: opts.doc.spotShape = "rect"
                 }
                 IconButton {
-                    glyph: "○"
+                    glyph: "\u{F0766}"
                     label: "Ellipse"
                     active: opts.doc.spotShape === "ellipse"
                     onClicked: opts.doc.spotShape = "ellipse"
@@ -363,7 +363,7 @@ Loader {
 
             IconButton {
                 visible: opts.doc.cropped
-                glyph: "\u21ba"
+                glyph: "\u{F0293}"
                 label: "Whole picture"
                 tip: "Back to the picture as it came in"
                 onClicked: opts.uncropRequested()
@@ -405,7 +405,7 @@ Loader {
 
             IconButton {
                 visible: opts.doc.kind === "shot"
-                glyph: "░"
+                glyph: "\u{F00B5}"
                 label: "Find and hide"
                 tip: "Pixelate everything the classes above match"
                 onClicked: opts.autoRedactRequested()
