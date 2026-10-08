@@ -179,6 +179,27 @@ QtObject {
         frame: doc.frame
     })
 
+    // The whole picture in shot pixels, which no mark leaves.
+    readonly property var pictureArea: Model.pictureArea(geo)
+
+    // How big each text label is drawn, by uid, which only its delegate can
+    // measure; what keeps a label inside the picture needs it.
+    property var shownSizes: ({})
+    function setShownSize(uid, w, h) {
+        var s = shownSizes;
+        s[uid] = { w: w, h: h };
+    }
+
+    function boundsOf(a) {
+        var s = a.kind === "text" ? shownSizes[a.uid] : null;
+        return Model.markBounds(a, s ? s.w : 0, s ? s.h : 0);
+    }
+
+    // How far the selection can move as one before any of it meets an edge.
+    function fitSelectionMove(dx, dy) {
+        return Model.fitMove(selectedRows().map(boundsOf), dx, dy, pictureArea);
+    }
+
     readonly property int outWidth: Math.round(geo.frameW * exportScale)
     readonly property int outHeight: Math.round(geo.frameH * exportScale)
     readonly property bool outputTooLarge: outWidth > Model.MAX_OUTPUT_SIDE
