@@ -161,7 +161,7 @@ Item {
                     anchors.fill: parent
                     preferredRendererType: Shape.CurveRenderer
 
-                    readonly property real head: Math.max(entry.stroke * 3.2, 10)
+                    readonly property real head: Model.arrowHead(entry.stroke)
                     readonly property var g: Model.arrowShape(entry.a.w, entry.a.h,
                                                               entry.a.style, arw.head, entry.a.bend)
 
@@ -190,12 +190,12 @@ Item {
                         startX: arw.g.tipX
                         startY: arw.g.tipY
                         PathLine {
-                            x: arw.g.tipX - Math.cos(arw.g.angEnd - 0.42) * arw.head
-                            y: arw.g.tipY - Math.sin(arw.g.angEnd - 0.42) * arw.head
+                            x: arw.g.tipX - Math.cos(arw.g.angEnd - Model.ARROW_SPREAD) * arw.head
+                            y: arw.g.tipY - Math.sin(arw.g.angEnd - Model.ARROW_SPREAD) * arw.head
                         }
                         PathLine {
-                            x: arw.g.tipX - Math.cos(arw.g.angEnd + 0.42) * arw.head
-                            y: arw.g.tipY - Math.sin(arw.g.angEnd + 0.42) * arw.head
+                            x: arw.g.tipX - Math.cos(arw.g.angEnd + Model.ARROW_SPREAD) * arw.head
+                            y: arw.g.tipY - Math.sin(arw.g.angEnd + Model.ARROW_SPREAD) * arw.head
                         }
                         PathLine { x: arw.g.tipX; y: arw.g.tipY }
                     }
@@ -206,12 +206,12 @@ Item {
                         startX: arw.g.tailX
                         startY: arw.g.tailY
                         PathLine {
-                            x: arw.g.tailX - Math.cos(arw.g.angStart - 0.42) * arw.head
-                            y: arw.g.tailY - Math.sin(arw.g.angStart - 0.42) * arw.head
+                            x: arw.g.tailX - Math.cos(arw.g.angStart - Model.ARROW_SPREAD) * arw.head
+                            y: arw.g.tailY - Math.sin(arw.g.angStart - Model.ARROW_SPREAD) * arw.head
                         }
                         PathLine {
-                            x: arw.g.tailX - Math.cos(arw.g.angStart + 0.42) * arw.head
-                            y: arw.g.tailY - Math.sin(arw.g.angStart + 0.42) * arw.head
+                            x: arw.g.tailX - Math.cos(arw.g.angStart + Model.ARROW_SPREAD) * arw.head
+                            y: arw.g.tailY - Math.sin(arw.g.angStart + Model.ARROW_SPREAD) * arw.head
                         }
                         PathLine { x: arw.g.tailX; y: arw.g.tailY }
                     }
@@ -384,7 +384,7 @@ Item {
                 preferredRendererType: Shape.CurveRenderer
                 readonly property var g: entry.a.kind === "arrow"
                     ? Model.arrowShape(entry.a.w, entry.a.h, entry.a.style,
-                                       Math.max(entry.stroke * 3.2, 10), entry.a.bend)
+                                       Model.arrowHead(entry.stroke), entry.a.bend)
                     : null
                 ShapePath {
                     strokeColor: Color.accent
