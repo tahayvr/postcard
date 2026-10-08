@@ -37,6 +37,16 @@ Flickable {
         }
     }
 
+    // A Section's title, centred like everything else in the panel.
+    component Heading: Text {
+        anchors.horizontalCenter: parent.horizontalCenter
+        color: Ui.textMuted
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+        font.capitalization: Font.AllUppercase
+        font.letterSpacing: 1
+    }
+
     function open(url) {
         Qt.openUrlExternally(url);
         about.linkOpened();
@@ -77,9 +87,7 @@ Flickable {
             }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: [about.manifest && about.manifest.version ? "Version " + about.manifest.version : "",
-                       about.manifest && about.manifest.license ? about.manifest.license + " license" : ""]
-                      .filter(function (s) { return s !== ""; }).join("  ·  ")
+                text: about.manifest && about.manifest.version ? "Version " + about.manifest.version : ""
                 visible: text !== ""
                 color: Ui.textMuted
                 font.family: Style.font.family
@@ -108,16 +116,7 @@ Flickable {
             width: parent.width
             spacing: Ui.row
 
-            // A Section's title, centred like the rest of this block.
-            Text {
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: "Help"
-                color: Ui.textMuted
-                font.family: Style.font.family
-                font.pixelSize: Style.font.caption
-                font.capitalization: Font.AllUppercase
-                font.letterSpacing: 1
-            }
+            Heading { text: "Help" }
             Row {
                 anchors.horizontalCenter: parent.horizontalCenter
                 spacing: Ui.gap
@@ -135,8 +134,11 @@ Flickable {
             }
         }
 
-        Section {
-            title: "Keys"
+        Column {
+            width: parent.width
+            spacing: Ui.row
+
+            Heading { text: "Keys" }
 
             Column {
                 width: parent.width
