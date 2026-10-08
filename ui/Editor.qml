@@ -468,8 +468,8 @@ Rectangle {
             Row {
                 anchors.horizontalCenter: parent.horizontalCenter
                 spacing: Ui.gap
-                IconButton { glyph: "\u2b1a"; label: "Capture a region"; onClicked: editor.captureRequested("region") }
-                IconButton { glyph: "\u2039\u203a"; label: "Code from selection"; onClicked: editor.codeRequested() }
+                IconButton { glyph: "\u{F0489}"; label: "Capture a region"; onClicked: editor.captureRequested("region") }
+                IconButton { glyph: "\uf121"; label: "Code from selection"; onClicked: editor.codeRequested() }
                 IconButton { glyph: "\uf1c5"; label: "Open a file"; onClicked: editor.openRequested() }
             }
         }
