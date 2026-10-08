@@ -1181,13 +1181,63 @@ test("a magnifier is drawn over what it shows, then set beside it", () => {
     eq(Model.magnifySource({ x: 0, y: 0, w: 120, h: 120, sx: 5, sy: 5, zoom: 7 }).r, 30,
        "an unknown zoom is read as the default");
 
-    const lens = Model.placeMagnifier(200, 300, 20, 2, 1000, 600);
+    const lens = Model.placeMagnifier(200, 300, 20, 2, { x: 0, y: 0, w: 1000, h: 600 });
     ok(lens.x > 200 && lens.y + lens.h < 300, "up and to the right when there is room");
     eq(lens.w, 80);
-    const corner = Model.placeMagnifier(980, 20, 20, 2, 1000, 600);
+    const corner = Model.placeMagnifier(980, 20, 20, 2, { x: 0, y: 0, w: 1000, h: 600 });
     ok(corner.x + corner.w < 980 && corner.y > 20, "down and to the left in the top right corner");
-    const cramped = Model.placeMagnifier(50, 50, 40, 4, 200, 200);
+    const cramped = Model.placeMagnifier(50, 50, 40, 4, { x: 0, y: 0, w: 200, h: 200 });
     eq(cramped.w, 320, "too big for anywhere still keeps its size");
+
+    // A short picture has no room beside the area: the lens is pulled in, over it.
+    const strip = { x: -20, y: -10, w: 1000, h: 120 };
+    const low = Model.placeMagnifier(500, 50, 20, 2, strip);
+    ok(low.y >= strip.y && low.y + low.h <= strip.y + strip.h, "inside the picture top to bottom");
+    ok(low.x >= strip.x && low.x + low.w <= strip.x + strip.w, "and side to side");
+    // The padding counts: room above the shot is room.
+    const padded = Model.placeMagnifier(200, 30, 20, 2, { x: -200, y: -200, w: 1400, h: 1000 });
+    ok(padded.y < 0, "up and to the right, over the padding");
+
+    // Moving the area takes the lens along, and both stop at the first edge.
+    const mag = { kind: "magnify", x: 300, y: 100, w: 80, h: 80, sx: 250, sy: 220, zoom: 2 };
+    eq(Model.moveMagnifierArea(mag, 10, -5, { x: 0, y: 0, w: 1000, h: 600 }), { x: 310, y: 95, sx: 260, sy: 215 });
+    eq(Model.moveMagnifierArea(mag, 0, -500, { x: 0, y: 0, w: 1000, h: 600 }).y, 0, "the lens meets the top first");
+    eq(Model.moveMagnifierArea(mag, -500, 0, { x: 0, y: 0, w: 1000, h: 600 }).sx, 0, "the area meets the left first");
+});
+
+test("marks are kept inside the whole picture", () => {
+    const geo = { cardX: 40, cardY: 30, inset: 10, chromeH: 20, frameW: 900, frameH: 700 };
+    eq(Model.pictureArea(geo), { x: -50, y: -60, w: 900, h: 700 }, "starting over the padding and title bar");
+    const area = { x: -50, y: -60, w: 900, h: 700 };
+    eq(Model.clampToArea(-80, 900, area), { x: -50, y: 640 });
+
+    // Several marks move as one and stop at the first edge.
+    const boxes = [{ x: 0, y: 0, w: 100, h: 100 }, { x: 700, y: 300, w: 100, h: 100 }];
+    eq(Model.fitMove(boxes, 100, 0, area), { dx: 50, dy: 0 }, "the right one reaches the edge");
+    eq(Model.fitMove(boxes, -100, -100, area), { dx: -50, dy: -60 }, "the left one reaches the corner");
+    eq(Model.fitMove(boxes.concat([{ x: 0, y: 0, w: 2000, h: 50 }]), 30, 0, area), { dx: 30, dy: 0 },
+       "one wider than the picture holds nothing back across it");
+    eq(Model.fitMove([{ x: -100, y: 0, w: 50, h: 50 }], -10, 0, area).dx, 0, "one already outside goes no further");
+    eq(Model.fitMove([{ x: -100, y: 0, w: 50, h: 50 }], 30, 0, area).dx, 30, "but may come back");
+
+    eq(Model.keepInside({ x: 820, y: 0, w: 60, h: 20 }, area), { dx: -30, dy: 0 }, "a label that grew past the edge slides back");
+    eq(Model.keepInside({ x: 0, y: 0, w: 1000, h: 20 }, area).dx, 0, "unless it cannot fit");
+
+    // How much of each mark counts.
+    eq(Model.markBounds({ kind: "box", x: 10, y: 10, w: -20, h: 30 }), { x: -10, y: 10, w: 20, h: 30 });
+    eq(Model.markBounds({ kind: "text", x: 5, y: 5, w: 0, h: 0 }, 80, 24), { x: 5, y: 5, w: 80, h: 24 }, "a label as drawn");
+    const curve = { kind: "arrow", style: "curved", x: 0, y: 100, w: 200, h: 0, bend: 0.5 };
+    eq(Model.markBounds(curve), { x: 0, y: 50, w: 200, h: 50 }, "a curve with its bulge");
+    eq(Model.markBounds(Object.assign({}, curve, { style: "straight" })).h, 0, "a straight arrow, the box between its ends");
+
+    // A curve eases off just enough to fit.
+    const tight = { x: -50, y: 80, w: 900, h: 700 };
+    const eased = Model.bendInside(curve, tight);
+    ok(eased > 0 && eased < 0.5, "flattened, not straightened");
+    const r = Model.arrowBounds(curve, eased);
+    ok(r.y >= tight.y - 0.01 && r.y < tight.y + 1, "to just inside the top");
+    eq(Model.bendInside(curve, area), 0.5, "and left alone where it fits");
+    eq(Model.bendInside(Object.assign({}, curve, { bend: -0.5 }), tight), -0.5, "a bend the other way had room");
 });
 
 test("a magnifier keeps whole pixels, and a new zoom keeps its lens", () => {

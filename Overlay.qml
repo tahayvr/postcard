@@ -221,7 +221,7 @@ Item {
             if (a.kind === "magnify") {
                 var m = Model.magnifyFromDrag(a.x, a.y, a.x + a.w, a.y + a.h, Number(o.zoom));
                 var lens = Model.placeMagnifier(m.sx, m.sy, m.w / 2 / Model.magnifyZoom(Number(o.zoom)),
-                                                Number(o.zoom), doc.shotWidth, doc.shotHeight);
+                                                Number(o.zoom), doc.pictureArea);
                 if (m.w < 2 * Model.MIN_MAGNIFY) continue;
                 a.zoom = Model.magnifyZoom(Number(o.zoom));
                 a.sx = m.sx; a.sy = m.sy;
@@ -1267,7 +1267,8 @@ Item {
         case Qt.Key_Down:  dy = step;  break;
         default: return false;
         }
-        doc.moveSelection(dx, dy, "");
+        var d = doc.fitSelectionMove(dx, dy);
+        doc.moveSelection(d.dx, d.dy, "");
         return true;
     }
 

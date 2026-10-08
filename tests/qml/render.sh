@@ -134,6 +134,14 @@ if echo "$slog" | grep -q "FAIL"; then fail=1; fi
 echo "$slog" | grep -q "^qml: ok   one of them being the tip" \
   || { echo "FAIL controls harness did not run to the end"; fail=1; }
 
+# ---- marks under a pointer -------------------------------------------------
+# Presses and drags through Qt's own test events: moves and resizes held to
+# the picture, and a magnifier's area taken before the handle over it.
+plog="$(cd "$here" && QT_FORCE_STDERR_LOGGING=1 QT_QPA_PLATFORM=offscreen timeout 60 /usr/lib/qt6/bin/qmltestrunner -import "$here/stubs" -input pointer 2>&1)"
+echo "$plog" | grep -E "^(PASS|FAIL!)" | grep -v "TestCase()" | sed -E 's/^PASS +: qmltestrunner::/ok   /; s/^FAIL! +: qmltestrunner::/FAIL /'
+echo "$plog" | grep -qE "^Totals: [0-9]+ passed, 0 failed" \
+  || { echo "FAIL pointer tests"; echo "$plog" | grep -A2 "FAIL!"; fail=1; }
+
 # ---- inset -----------------------------------------------------------------
 # Second export from the same harness: inset 10% of 400 = 40px of the shot's
 # edge color (forced to magenta) on every side, so the card grows to 480x280

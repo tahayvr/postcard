@@ -66,6 +66,24 @@ Item {
             // Everything but a line is selected in a frame with white corners,
             // and where it has sides, resized from anywhere along one.
             readonly property bool framed: a.kind !== "arrow"
+            // A lens is framed a little further out than the rest, clear of
+            // its ring.
+            readonly property real frameGap: a.kind === "magnify" ? 3 / anno.viewScale : anno.frameGap
+            readonly property real frameOut: entry.frameGap + anno.px / 2
+
+            // A label is as big as its text, which only this delegate knows:
+            // it tells the document, and slides back inside the picture if
+            // typing or a new font grows it past an edge.
+            onWidthChanged: entry.measured()
+            onHeightChanged: entry.measured()
+            function measured() {
+                if (!entry.sizedByContent || !anno.doc) return;
+                anno.doc.setShownSize(entry.a.uid, entry.width, entry.height);
+                if (anno.doc.exporting) return;
+                var back = Model.keepInside(anno.doc.boundsOf(entry.a), anno.doc.pictureArea);
+                if (back.dx !== 0 || back.dy !== 0)
+                    anno.doc.updateAnnotation(entry.a.uid, { x: entry.a.x + back.dx, y: entry.a.y + back.dy });
+            }
             // Where the mark sits by the model. During a move the item is
             // dragged away from this and the model only catches up on
             // release, so anything placed inside the item measures from here
@@ -368,7 +386,7 @@ Item {
             // a box around it would read as something to resize like a box.
             Rectangle {
                 anchors.fill: parent
-                anchors.margins: -(anno.frameGap + anno.px)
+                anchors.margins: -(entry.frameGap + anno.px)
                 visible: anno.editable && entry.selected && !anno.doc.exporting && entry.framed
                 color: "transparent"
                 border.color: Color.accent
@@ -459,6 +477,14 @@ Item {
                 // its move back as it happens or the hole lags behind the drag.
                 onPositionChanged: {
                     if (hold.toggling) return;
+                    // The drag puts the mark under the pointer; the selection
+                    // as a whole is then held inside the picture.
+                    if (hold.pressed) {
+                        var d = anno.doc.fitSelectionMove(entry.x - entry.originX - entry.follow.x,
+                                                          entry.y - entry.originY - entry.follow.y);
+                        entry.x = entry.originX + d.dx;
+                        entry.y = entry.originY + d.dy;
+                    }
                     if (anno.doc.groupLeader === entry.a.uid)
                         anno.doc.groupShift = Qt.point(entry.x - entry.originX, entry.y - entry.originY);
                     if (entry.a.kind === "spotlight") entry.commit();
@@ -475,34 +501,48 @@ Item {
                 }
             }
 
-            // A magnifier's area moves on its own, the lens staying where it is.
+            // A press inside a magnifier's area moves the area, and the lens
+            // with it so it stays beside what it shows. Above the handles: the
+            // lens is set diagonally from the area, so one of its corners
+            // lands on the area, and the area has to win there.
             MouseArea {
                 id: sourceGrab
+                z: 1
                 readonly property real r: entry.a.kind === "magnify"
                                           ? Model.magnifySource(entry.a).r : 0
+                // Never too small to take hold of on screen.
+                readonly property real reach: Math.max(sourceGrab.r, anno.slop)
+                readonly property bool inside: sourceGrab.within(sourceGrab.mouseX, sourceGrab.mouseY)
+                function within(x, y) {
+                    var dx = x - sourceGrab.reach, dy = y - sourceGrab.reach;
+                    return dx * dx + dy * dy <= sourceGrab.reach * sourceGrab.reach;
+                }
                 visible: entry.a.kind === "magnify"
                 enabled: visible && entry.grabbable
-                x: entry.a.sx - entry.x - sourceGrab.r - anno.slop
-                y: entry.a.sy - entry.y - sourceGrab.r - anno.slop
-                width: (sourceGrab.r + anno.slop) * 2
-                height: (sourceGrab.r + anno.slop) * 2
-                cursorShape: Qt.SizeAllCursor
-                property real offX: 0
-                property real offY: 0
+                hoverEnabled: enabled
+                x: entry.a.sx - entry.x - sourceGrab.reach
+                y: entry.a.sy - entry.y - sourceGrab.reach
+                width: sourceGrab.reach * 2
+                height: sourceGrab.reach * 2
+                cursorShape: !sourceGrab.inside ? Qt.ArrowCursor
+                           : sourceGrab.pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+                property var from: null
+                property point at: Qt.point(0, 0)
 
                 onPressed: function (e) {
-                    var p = mapToItem(anno, e.x, e.y);
-                    sourceGrab.offX = p.x - entry.a.sx;
-                    sourceGrab.offY = p.y - entry.a.sy;
+                    if (!sourceGrab.within(e.x, e.y)) { e.accepted = false; return; }
+                    sourceGrab.at = mapToItem(anno, e.x, e.y);
+                    sourceGrab.from = { x: entry.a.x, y: entry.a.y, w: entry.a.w, h: entry.a.h,
+                                        sx: entry.a.sx, sy: entry.a.sy };
                     anno.doc.selectedId = entry.a.uid;
                 }
                 onPositionChanged: function (e) {
-                    if (!pressed) return;
+                    if (!pressed || !sourceGrab.from) return;
                     var p = mapToItem(anno, e.x, e.y);
-                    anno.doc.updateAnnotation(entry.a.uid, {
-                        sx: Math.round(Model.clamp(p.x - sourceGrab.offX, 0, anno.doc.shotWidth)),
-                        sy: Math.round(Model.clamp(p.y - sourceGrab.offY, 0, anno.doc.shotHeight))
-                    });
+                    // Whole pixels, so the area still starts on one.
+                    anno.doc.updateAnnotation(entry.a.uid, Model.moveMagnifierArea(sourceGrab.from,
+                        Math.round(p.x - sourceGrab.at.x), Math.round(p.y - sourceGrab.at.y),
+                        anno.doc.pictureArea));
                 }
                 onReleased: anno.doc.annotationsEdited()
             }
@@ -516,7 +556,7 @@ Item {
                     id: edge
                     required property string modelData
                     readonly property bool across: edge.modelData === "t" || edge.modelData === "b"
-                    readonly property real reach: anno.frameOut + anno.slop / 2
+                    readonly property real reach: entry.frameOut + anno.slop / 2
                     property real offX: 0
                     property real offY: 0
 
@@ -547,8 +587,9 @@ Item {
                     onPositionChanged: function (e) {
                         if (!pressed) return;
                         var p = mapToItem(anno, e.x, e.y);
+                        var q = Model.clampToArea(p.x - edge.offX, p.y - edge.offY, anno.doc.pictureArea);
                         anno.doc.updateAnnotation(entry.a.uid,
-                            Model.resizeAnnotation(entry.a, edge.modelData, p.x - edge.offX, p.y - edge.offY,
+                            Model.resizeAnnotation(entry.a, edge.modelData, q.x, q.y,
                                                    entry.width, entry.height));
                     }
                     onReleased: anno.doc.annotationsEdited()
@@ -569,11 +610,11 @@ Item {
                     readonly property bool side: knob.spot !== null && Model.isSideHandle(knob.spot.key)
                     // A corner sits on the frame, outside the stroke.
                     readonly property real outX: !entry.framed || !knob.spot ? 0
-                        : knob.spot.key.indexOf("l") !== -1 ? -anno.frameOut
-                        : knob.spot.key.indexOf("r") !== -1 ? anno.frameOut : 0
+                        : knob.spot.key.indexOf("l") !== -1 ? -entry.frameOut
+                        : knob.spot.key.indexOf("r") !== -1 ? entry.frameOut : 0
                     readonly property real outY: !entry.framed || !knob.spot ? 0
-                        : knob.spot.key.indexOf("t") !== -1 ? -anno.frameOut
-                        : knob.spot.key.indexOf("b") !== -1 ? anno.frameOut : 0
+                        : knob.spot.key.indexOf("t") !== -1 ? -entry.frameOut
+                        : knob.spot.key.indexOf("b") !== -1 ? entry.frameOut : 0
                     property real offX: 0
                     property real offY: 0
 
@@ -611,11 +652,17 @@ Item {
                         onPositionChanged: function (e) {
                             if (!pressed || !knob.spot) return;
                             var p = mapToItem(anno, e.x, e.y);
+                            // Held to the picture, wherever the pointer goes.
+                            var q = Model.clampToArea(p.x - knob.offX, p.y - knob.offY, anno.doc.pictureArea);
                             // By uid, and through the document, which tells
                             // everything drawn from the model that it moved.
                             anno.doc.updateAnnotation(entry.a.uid,
-                                Model.resizeAnnotation(entry.a, knob.spot.key, p.x - knob.offX, p.y - knob.offY,
+                                Model.resizeAnnotation(entry.a, knob.spot.key, q.x, q.y,
                                                        entry.width, entry.height));
+                            // A curve pulled against an edge flattens to fit.
+                            if (entry.a.kind === "arrow")
+                                anno.doc.updateAnnotation(entry.a.uid,
+                                    { bend: Model.bendInside(entry.a, anno.doc.pictureArea) });
                         }
                         onReleased: {
                             // The next label starts at the size this one was left at.

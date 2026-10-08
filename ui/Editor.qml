@@ -47,6 +47,9 @@ Rectangle {
         if (draw.activeId === "") return;
         var i = doc.indexOfId(draw.activeId);
         if (i < 0) return;
+        // A mark is drawn inside the picture, whatever the pointer does.
+        var q = Model.clampToArea(px, py, doc.pictureArea);
+        px = q.x; py = q.y;
         if (doc.tool === "magnify") {
             var m = Model.magnifyFromDrag(draw.ox, draw.oy, px, py, doc.magnifyZoom);
             doc.updateAnnotation(draw.activeId, m);
@@ -54,6 +57,10 @@ Rectangle {
         }
         doc.annotations.setProperty(i, "w", px - draw.ox);
         doc.annotations.setProperty(i, "h", py - draw.oy);
+        if (doc.tool === "arrow") {
+            var a = doc.annotations.get(i);
+            doc.annotations.setProperty(i, "bend", Model.bendInside(a, doc.pictureArea));
+        }
         // Every other tool draws itself from the delegate, which follows the
         // model on its own. The dim is one layer over the picture, so it only
         // redraws when the document says something changed.
@@ -71,8 +78,7 @@ Rectangle {
             doc.removeAnnotation(uid);
             return;
         }
-        doc.updateAnnotation(uid, Model.placeMagnifier(src.x, src.y, src.r, a.zoom,
-                                                       doc.shotWidth, doc.shotHeight));
+        doc.updateAnnotation(uid, Model.placeMagnifier(src.x, src.y, src.r, a.zoom, doc.pictureArea));
         doc.annotationsEdited();
     }
 
@@ -362,6 +368,12 @@ Rectangle {
                 onPressed: function (e) {
                     if (doc.tool === "select") { doc.selectedId = ""; return; }
                     var p = toShot(e.x, e.y);
+                    // Pressed in the space around the picture, a mark still
+                    // starts inside it; a crop is about the shot alone.
+                    if (doc.tool !== "crop") {
+                        var q = Model.clampToArea(p.x, p.y, doc.pictureArea);
+                        p = Qt.point(q.x, q.y);
+                    }
                     ox = p.x; oy = p.y;
 
                     if (doc.tool === "crop") {
@@ -382,6 +394,9 @@ Rectangle {
                         a.index = doc.stepCounter;
                         a.x = p.x - size / 2; a.y = p.y - size / 2;
                         a.w = size; a.h = size;
+                        // Placed whole in one click, so all of it goes inside.
+                        var back = Model.keepInside({ x: a.x, y: a.y, w: size, h: size }, doc.pictureArea);
+                        a.x += back.dx; a.y += back.dy;
                         doc.addAnnotation(a);
                         activeId = "";
                         return;
