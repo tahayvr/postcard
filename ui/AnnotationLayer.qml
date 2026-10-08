@@ -153,7 +153,7 @@ Item {
 
                     readonly property real head: Math.max(entry.stroke * 3.2, 10)
                     readonly property var g: Model.arrowShape(entry.a.w, entry.a.h,
-                                                              entry.a.style, arw.head)
+                                                              entry.a.style, arw.head, entry.a.bend)
 
                     ShapePath {
                         strokeColor: entry.ink
@@ -375,7 +375,7 @@ Item {
                 preferredRendererType: Shape.CurveRenderer
                 readonly property var g: entry.a.kind === "arrow"
                     ? Model.arrowShape(entry.a.w, entry.a.h, entry.a.style,
-                                       Math.max(entry.stroke * 3.2, 10))
+                                       Math.max(entry.stroke * 3.2, 10), entry.a.bend)
                     : null
                 ShapePath {
                     strokeColor: Color.accent
@@ -396,7 +396,11 @@ Item {
             MouseArea {
                 anchors.fill: parent
                 id: hold
-                anchors.margins: -anno.slop
+                // A curve bows out of the box it was dragged in, the more so
+                // the further it is bent, and all of it has to take a press.
+                readonly property real reach: anno.slop
+                    + (entry.a.kind === "arrow" ? Model.arrowBulge(entry.a) : 0)
+                anchors.margins: -hold.reach
                 enabled: anno.interactive
                 hoverEnabled: anno.interactive
 
@@ -404,8 +408,8 @@ Item {
                 // hollow middle of it or off the line of an arrow.
                 readonly property bool onMark: Model.hitAnnotation(
                     entry.a,
-                    entry.originX - anno.slop + hold.mouseX,
-                    entry.originY - anno.slop + hold.mouseY,
+                    entry.originX - hold.reach + hold.mouseX,
+                    entry.originY - hold.reach + hold.mouseY,
                     anno.slop, entry.width, entry.height)
 
                 // The cursor promises only what a press will do: a move where
