@@ -210,7 +210,7 @@ Flickable {
                     }
                 }
                 IconButton {
-                    glyph: "+"
+                    glyph: "\uf067"
                     tip: "Save this look as a new preset"
                     active: insp.naming
                     implicitWidth: Ui.control
@@ -392,7 +392,7 @@ Flickable {
                             font.pixelSize: Style.font.caption
                         }
                         IconButton {
-                            glyph: doc.layoutDir === "row" ? "\u2190" : "\u2191"
+                            glyph: doc.layoutDir === "row" ? "\u{F004D}" : "\u{F005D}"
                             flat: true
                             enabled: slotRow.index > 0
                             opacity: enabled ? 1 : 0.3
@@ -400,7 +400,7 @@ Flickable {
                             onClicked: insp.shotRequested("left", slotRow.modelData.id)
                         }
                         IconButton {
-                            glyph: doc.layoutDir === "row" ? "\u2192" : "\u2193"
+                            glyph: doc.layoutDir === "row" ? "\u{F0054}" : "\u{F0045}"
                             flat: true
                             enabled: slotRow.index < doc.shotCount - 1
                             opacity: enabled ? 1 : 0.3
@@ -408,7 +408,7 @@ Flickable {
                             onClicked: insp.shotRequested("right", slotRow.modelData.id)
                         }
                         IconButton {
-                            glyph: "\u21ba"
+                            glyph: "\u{F0293}"
                             flat: true
                             enabled: !!slotRow.modelData.crop
                             opacity: enabled ? 1 : 0.3
@@ -416,7 +416,7 @@ Flickable {
                             onClicked: insp.shotRequested("uncrop", slotRow.modelData.id)
                         }
                         IconButton {
-                            glyph: "\u2715"
+                            glyph: "\u{F0156}"
                             flat: true
                             tip: "Take this shot off the card"
                             onClicked: insp.shotRequested("remove", slotRow.modelData.id)
@@ -555,7 +555,7 @@ Flickable {
                         }
                     }
                     IconButton {
-                        glyph: "+"
+                        glyph: "\uf067"
                         tip: "Save a gradient of your own, starting from this one"
                         implicitHeight: Ui.swatch
                         implicitWidth: insp.tileCell
@@ -594,7 +594,7 @@ Flickable {
                         }
                     }
                     IconButton {
-                        glyph: "+"
+                        glyph: "\uf067"
                         tip: "Add a color"
                         visible: doc.bgCustomStops.length < Model.CUSTOM_MAX_STOPS
                         implicitHeight: insp.swatchCell
@@ -602,7 +602,7 @@ Flickable {
                         onClicked: insp.addStop()
                     }
                     IconButton {
-                        glyph: "\u2212"
+                        glyph: "\uf068"
                         tip: insp.pickerTarget.indexOf("stop") === 0 ? "Remove this color" : "Remove the last color"
                         visible: doc.bgCustomStops.length > Model.CUSTOM_MIN_STOPS
                         implicitHeight: insp.swatchCell
@@ -669,7 +669,7 @@ Flickable {
                         }
                     }
                     IconButton {
-                        glyph: "+"
+                        glyph: "\uf067"
                         tip: "Pick your own color"
                         active: insp.pickerTarget === "solid"
                         implicitHeight: insp.swatchCell
@@ -805,7 +805,7 @@ Flickable {
                 IconButton {
                     id: logoOff
                     visible: doc.watermarkLogo !== ""
-                    glyph: "\u2715"
+                    glyph: "\u{F0156}"
                     tip: "Remove the logo"
                     onClicked: doc.watermarkLogo = ""
                 }
@@ -848,7 +848,7 @@ Flickable {
             IconButton {
                 width: parent.width
                 visible: doc.kind === "shot"
-                glyph: "⎘"
+                glyph: "\uf0c5"
                 label: "Copy the text in the shot"
                 onClicked: insp.copyTextRequested()
             }

@@ -70,7 +70,7 @@ Item {
 
         Text {
             anchors.centerIn: parent
-            text: "×"
+            text: "\u{F0156}"
             color: badgeArea.containsMouse ? Color.background : Ui.text
             font.family: Style.font.family
             font.pixelSize: Math.round(badge.size * 0.8)

@@ -43,10 +43,10 @@ Item {
             anchors.right: parent.right
             anchors.rightMargin: Ui.padX
             anchors.verticalCenter: parent.verticalCenter
-            text: popup.opened ? "▴" : "▾"
+            text: popup.opened ? "\u{F0143}" : "\u{F0140}"
             color: Ui.textMuted
             font.family: Style.font.family
-            font.pixelSize: Style.font.bodySmall
+            font.pixelSize: Style.font.icon
         }
         MouseArea {
             id: ma
