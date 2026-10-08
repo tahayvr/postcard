@@ -34,5 +34,16 @@ Item {
                 font.pixelSize: Style.font.caption
             }
         }
+
+        Section {
+            title: "Capturing"
+
+            Toggle {
+                label: "Copy to the clipboard when capturing"
+                hint: "A new screenshot goes onto the clipboard as it is, before any editing"
+                checked: prefs.doc.captureCopies
+                onToggled: function (v) { prefs.doc.captureCopies = v; }
+            }
+        }
     }
 }

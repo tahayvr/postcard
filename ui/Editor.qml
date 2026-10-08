@@ -47,6 +47,9 @@ Rectangle {
         if (draw.activeId === "") return;
         var i = doc.indexOfId(draw.activeId);
         if (i < 0) return;
+        // A mark is drawn inside the picture, whatever the pointer does.
+        var q = Model.clampToArea(px, py, doc.pictureArea);
+        px = q.x; py = q.y;
         if (doc.tool === "magnify") {
             var m = Model.magnifyFromDrag(draw.ox, draw.oy, px, py, doc.magnifyZoom);
             doc.updateAnnotation(draw.activeId, m);
@@ -54,6 +57,10 @@ Rectangle {
         }
         doc.annotations.setProperty(i, "w", px - draw.ox);
         doc.annotations.setProperty(i, "h", py - draw.oy);
+        if (doc.tool === "arrow") {
+            var a = doc.annotations.get(i);
+            doc.annotations.setProperty(i, "bend", Model.bendInside(a, doc.pictureArea));
+        }
         // Every other tool draws itself from the delegate, which follows the
         // model on its own. The dim is one layer over the picture, so it only
         // redraws when the document says something changed.
@@ -71,16 +78,16 @@ Rectangle {
             doc.removeAnnotation(uid);
             return;
         }
-        doc.updateAnnotation(uid, Model.placeMagnifier(src.x, src.y, src.r, a.zoom,
-                                                       doc.shotWidth, doc.shotHeight));
+        doc.updateAnnotation(uid, Model.placeMagnifier(src.x, src.y, src.r, a.zoom, doc.pictureArea));
         doc.annotationsEdited();
     }
 
     readonly property Item exportTarget: grabRoot
-    readonly property string repoUrl: "https://github.com/tahayvr/postcard"
-    // The settings take the inspector's place while they are open.
-    property bool settingsOpen: false
+    property var manifest: null
+    // "settings" or "about" take the inspector's place while they are open.
+    property string panel: ""
     readonly property Item sidePanel: settingsPanel.visible ? settingsPanel
+                                    : aboutPanel.visible ? aboutPanel
                                     : inspector.visible ? inspector : null
     // True from the moment the picture is ready until the drag ends: the
     // backdrop goes first, and the drag starts once it has.
@@ -173,23 +180,19 @@ Rectangle {
             IconButton {
                 glyph: "\uf013"
                 flat: true
-                active: editor.settingsOpen
+                active: editor.panel === "settings"
                 tip: "Settings"
-                onClicked: editor.settingsOpen = !editor.settingsOpen
+                onClicked: editor.panel = editor.panel === "settings" ? "" : "settings"
             }
-            // The overlay covers the screen, so the browser it opens would
-            // sit behind it; close on the way out.
             IconButton {
-                glyph: "\uf09b"
+                glyph: "\uf05a"
                 flat: true
-                tip: "Postcard on GitHub"
-                onClicked: {
-                    Qt.openUrlExternally(editor.repoUrl);
-                    editor.closeRequested();
-                }
+                active: editor.panel === "about"
+                tip: "About, help and keys"
+                onClicked: editor.panel = editor.panel === "about" ? "" : "about"
             }
             IconButton {
-                glyph: "\u2715"
+                glyph: "\u{F0156}"
                 flat: true
                 tip: "Close (Esc)"
                 onClicked: editor.closeRequested()
@@ -365,6 +368,12 @@ Rectangle {
                 onPressed: function (e) {
                     if (doc.tool === "select") { doc.selectedId = ""; return; }
                     var p = toShot(e.x, e.y);
+                    // Pressed in the space around the picture, a mark still
+                    // starts inside it; a crop is about the shot alone.
+                    if (doc.tool !== "crop") {
+                        var q = Model.clampToArea(p.x, p.y, doc.pictureArea);
+                        p = Qt.point(q.x, q.y);
+                    }
                     ox = p.x; oy = p.y;
 
                     if (doc.tool === "crop") {
@@ -385,6 +394,9 @@ Rectangle {
                         a.index = doc.stepCounter;
                         a.x = p.x - size / 2; a.y = p.y - size / 2;
                         a.w = size; a.h = size;
+                        // Placed whole in one click, so all of it goes inside.
+                        var back = Model.keepInside({ x: a.x, y: a.y, w: size, h: size }, doc.pictureArea);
+                        a.x += back.dx; a.y += back.dy;
                         doc.addAnnotation(a);
                         activeId = "";
                         return;
@@ -471,8 +483,8 @@ Rectangle {
             Row {
                 anchors.horizontalCenter: parent.horizontalCenter
                 spacing: Ui.gap
-                IconButton { glyph: "\u2b1a"; label: "Capture a region"; onClicked: editor.captureRequested("region") }
-                IconButton { glyph: "\u2039\u203a"; label: "Code from selection"; onClicked: editor.codeRequested() }
+                IconButton { glyph: "\u{F0489}"; label: "Capture a region"; onClicked: editor.captureRequested("region") }
+                IconButton { glyph: "\uf121"; label: "Code from selection"; onClicked: editor.codeRequested() }
                 IconButton { glyph: "\uf1c5"; label: "Open a file"; onClicked: editor.openRequested() }
             }
         }
@@ -484,7 +496,7 @@ Rectangle {
         systemThemes: editor.systemThemes
         anchors { top: header.bottom; bottom: footer.top; right: parent.right }
         width: Style.space(300)
-        visible: doc.hasContent && !editor.settingsOpen
+        visible: doc.hasContent && editor.panel === ""
         onCopyTextRequested: editor.copyTextRequested()
         onLogoRequested: editor.logoRequested()
         onShotRequested: function (action, id) { editor.shotRequested(action, id); }
@@ -497,7 +509,16 @@ Rectangle {
         saveDir: editor.saveDir
         anchors { top: header.bottom; bottom: footer.top; right: parent.right }
         width: inspector.width
-        visible: editor.settingsOpen
+        visible: editor.panel === "settings"
+    }
+
+    About {
+        id: aboutPanel
+        manifest: editor.manifest
+        anchors { top: header.bottom; bottom: footer.top; right: parent.right }
+        width: inspector.width
+        visible: editor.panel === "about"
+        onLinkOpened: editor.closeRequested()
     }
 
     Rectangle {
@@ -552,7 +573,7 @@ Rectangle {
             visible: doc.hasContent
 
             IconButton {
-                glyph: "\u21ba"
+                glyph: "\u{F099B}"
                 tip: "Reset styling"
                 flat: true
                 onClicked: doc.reset()
@@ -575,7 +596,7 @@ Rectangle {
                 Drag.onDragFinished: editor.draggingOut = false
             }
             IconButton {
-                glyph: "\u2398"
+                glyph: "\uf0c5"
                 label: editor.busy ? "Working\u2026" : "Copy"
                 onClicked: editor.copyRequested()
             }
@@ -586,7 +607,7 @@ Rectangle {
                 onClicked: editor.saveAsRequested()
             }
             IconButton {
-                glyph: "\u2193"
+                glyph: "\uf019"
                 label: "Save"
                 tip: "Save to " + editor.saveDir + " (Ctrl+S)"
                 primary: true

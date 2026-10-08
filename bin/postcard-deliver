@@ -6,6 +6,7 @@
 #                                                        file: a name taken gets -2, -3, ...
 # postcard-deliver file <png> <dest> <format> <quality> [w h] -> the file alone, to be dragged
 # postcard-deliver text                                        -> stdin onto the clipboard
+# postcard-deliver shot <png>                                  -> a capture onto the clipboard, as it is
 # The grab is padded up to whole device pixels so nothing gets resampled;
 # w h is the size of the picture inside it, and the surplus is cropped off.
 set -uo pipefail
@@ -14,6 +15,13 @@ action="${1:-copy}"
 
 if [ "$action" = "text" ]; then
   wl-copy
+  exit 0
+fi
+
+if [ "$action" = "shot" ]; then
+  [ -f "${2:-}" ] || { echo "Nothing to copy"; exit 1; }
+  wl-copy --type image/png < "$2"
+  echo "Screenshot copied to the clipboard"
   exit 0
 fi
 

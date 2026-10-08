@@ -143,6 +143,9 @@ Item {
         if (!eyedropProc.running) eyedropping = false;
         if (!captureProc.running) capturing = false;
         doc.selectedId = "";
+        // The overlay is kept loaded, so a panel left open would greet the
+        // next picture instead of the inspector.
+        editor.panel = "";
     }
 
     function dismiss() {
@@ -196,6 +199,8 @@ Item {
             a.width = Number(o.width) || doc.inkWidth;
             a.style = o.style ? String(o.style)
                     : (a.kind === "arrow" ? String(doc.arrowStyle) : "");
+            if (o.bend !== undefined && isFinite(Number(o.bend)))
+                a.bend = Model.arrowBend({ bend: Number(o.bend) });
             a.text = o.text ? String(o.text) : "";
             // A label sized by width, as before it had a size, keeps that size.
             if (a.kind === "text") a.font = o.font ? String(o.font) : String(doc.textFont);
@@ -216,7 +221,7 @@ Item {
             if (a.kind === "magnify") {
                 var m = Model.magnifyFromDrag(a.x, a.y, a.x + a.w, a.y + a.h, Number(o.zoom));
                 var lens = Model.placeMagnifier(m.sx, m.sy, m.w / 2 / Model.magnifyZoom(Number(o.zoom)),
-                                                Number(o.zoom), doc.shotWidth, doc.shotHeight);
+                                                Number(o.zoom), doc.pictureArea);
                 if (m.w < 2 * Model.MIN_MAGNIFY) continue;
                 a.zoom = Model.magnifyZoom(Number(o.zoom));
                 a.sx = m.sx; a.sy = m.sy;
@@ -240,7 +245,8 @@ Item {
                   || textProc.running || ocrProc.running,
             hasContent: doc.hasContent,
             // Rendering is `busy`; encoding and writing the file comes after.
-            delivering: deliver.running || dragFile.running, lastSaved: root.lastSaved,
+            delivering: deliver.running || dragFile.running || shotCopy.running,
+            lastSaved: root.lastSaved,
             shotPath: doc.shotPath, shotWidth: doc.shotWidth, shotHeight: doc.shotHeight,
             outWidth: doc.outWidth, outHeight: doc.outHeight, annotations: doc.annotations.count,
             preset: doc.activePresetEntry.name, presetModified: doc.presetModified,
@@ -615,8 +621,12 @@ Item {
                     doc.sheet = Model.sheetLayout(doc.slots, root.layoutOptions());
                 }
                 editor.statusText = implicitWidth + "×" + implicitHeight + " loaded";
+                // Started with the size, so a script waiting for hasContent
+                // finds it delivering until the copy is done.
+                if (shotCopy.path === doc.shotPath) shotCopy.running = true;
             } else if (status === Image.Error) {
                 editor.statusText = "Could not open that image";
+                shotCopy.path = "";
             }
         }
     }
@@ -845,6 +855,7 @@ Item {
     Connections {
         target: doc
         function onSaveCopiesChanged() { if (root.settingsReady) settingsSave.restart(); }
+        function onCaptureCopiesChanged() { if (root.settingsReady) settingsSave.restart(); }
     }
 
     // preset <name>: put a saved preset on the card, by name or id, or
@@ -913,13 +924,35 @@ Item {
                 var path = lines[lines.length - 1].trim();
                 root.capturing = false;
                 if (path.length > 0 && path.indexOf("/") === 0) {
-                    if (captureProc.append) root.addShot(path); else root.loadShot(path);
+                    if (captureProc.append) {
+                        root.addShot(path);
+                    } else {
+                        // The plain shot, for pasting straight away; a shot
+                        // added beside others is part of a card being made.
+                        shotCopy.path = doc.captureCopies ? path : "";
+                        root.loadShot(path);
+                    }
                 } else if (!doc.hasContent) {
                     root.dismiss();    // cancelled with nothing to fall back to
                 } else {
                     editor.statusText = "Capture cancelled";
                 }
                 root.focusEditor();
+            }
+        }
+    }
+
+    // A capture to copy as it is, once it has loaded. Apart from deliver,
+    // whose args a save may still be using.
+    Process {
+        id: shotCopy
+        property string path: ""
+        command: ["bash", root.pluginDir + "bin/postcard-deliver", "shot", path]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                shotCopy.path = "";
+                var msg = text.trim();
+                if (msg.length) editor.statusText = msg;
             }
         }
     }
@@ -1234,14 +1267,15 @@ Item {
         case Qt.Key_Down:  dy = step;  break;
         default: return false;
         }
-        doc.moveSelection(dx, dy, "");
+        var d = doc.fitSelectionMove(dx, dy);
+        doc.moveSelection(d.dx, d.dy, "");
         return true;
     }
 
     function handleKey(event) {
         if (event.key === Qt.Key_Escape) {
             if (doc.cropUsable) doc.cropRect = Qt.rect(0, 0, 0, 0);
-            else if (editor.settingsOpen) editor.settingsOpen = false;
+            else if (editor.panel !== "") editor.panel = "";
             else if (doc.selectedId !== "") doc.selectedId = "";
             else root.dismiss();
             return true;
@@ -1379,6 +1413,7 @@ Item {
                 doc: doc
                 systemThemes: root.systemThemes
                 saveDir: root.shotDir
+                manifest: root.manifest
                 radius: 0
 
                 onEyedropRequested: function (done) { root.eyedrop(done); }

@@ -88,6 +88,8 @@ the picture that should not be public.
 **Output**
 
 - Clipboard or disk, PNG or JPEG, at 1x, 2x or 3x
+- Optionally, every capture goes onto the clipboard as it is taken, for pasting
+  without editing (Settings)
 - The preview is the file
 
 ## Install
@@ -126,6 +128,9 @@ o.bind("SUPER + SHIFT + S", "Postcard editor", "omarchy-shell shell toggle tahay
 The buttons at the top of the editor grab a region, window or screen, make a
 code card, or open a file. A code card takes the primary selection, or the
 clipboard if nothing is highlighted.
+
+The ⓘ button beside Settings lists the keys that no button shows, with
+links to this guide, to report a problem, and to sponsor Postcard.
 
 ### Keys
 

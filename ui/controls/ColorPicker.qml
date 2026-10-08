@@ -186,7 +186,7 @@ Column {
 
         IconButton {
             id: eyedrop
-            glyph: ""
+            glyph: "\uf1fb"
             tip: "Pick a color from the screen"
             implicitHeight: Ui.control
             onClicked: root.eyedropRequested()

@@ -10,15 +10,15 @@ Item {
     readonly property int annotationCount: rail.doc ? rail.doc.annotations.count : 0
 
     readonly property var tools: [
-        { key: "select",    glyph: "↖", name: "Move",      hint: "V" },
-        { key: "arrow",     glyph: "↗", name: "Arrow",     hint: "A" },
-        { key: "box",       glyph: "□", name: "Box",       hint: "R" },
-        { key: "ellipse",   glyph: "○", name: "Ellipse",   hint: "O" },
-        { key: "text",      glyph: "T",      name: "Text",      hint: "T" },
-        { key: "step",      glyph: "①", name: "Step",      hint: "S" },
-        { key: "highlight", glyph: "▤", name: "Highlight", hint: "H" },
-        { key: "redact",    glyph: "░", name: "Hide",      hint: "B" },
-        { key: "spotlight", glyph: "◎", name: "Spotlight", hint: "L" },
+        { key: "select",    glyph: "\u{F01BF}", name: "Move",      hint: "V" },
+        { key: "arrow",     glyph: "\u{F005C}", name: "Arrow",     hint: "A" },
+        { key: "box",       glyph: "\u{F0763}", name: "Box",       hint: "R" },
+        { key: "ellipse",   glyph: "\u{F0766}", name: "Ellipse",   hint: "O" },
+        { key: "text",      glyph: "\u{F0284}", name: "Text",      hint: "T" },
+        { key: "step",      glyph: "\u{F0CA1}", name: "Step",      hint: "S" },
+        { key: "highlight", glyph: "\u{F0652}", name: "Highlight", hint: "H" },
+        { key: "redact",    glyph: "\u{F00B5}", name: "Hide",      hint: "B" },
+        { key: "spotlight", glyph: "\u{F05DD}", name: "Spotlight", hint: "L" },
         { key: "magnify",   glyph: "\uf00e", name: "Magnify", hint: "M" },
         { key: "crop",      glyph: "\uf125", name: "Crop",  hint: "C", shotOnly: true }
     ]
@@ -70,21 +70,21 @@ Item {
         // Each is a no-op with nothing to act on, so they say so instead of
         // looking like a button that does nothing.
         IconButton {
-            glyph: "↶"
+            glyph: "\u{F054D}"
             flat: true
             enabled: rail.doc !== null && rail.doc.canUndo
             tip: "Undo (Ctrl+Z)"
             onClicked: if (rail.doc.undo()) rail.status("Undone")
         }
         IconButton {
-            glyph: "↷"
+            glyph: "\u{F044F}"
             flat: true
             enabled: rail.doc !== null && rail.doc.canRedo
             tip: "Redo (Ctrl+Shift+Z)"
             onClicked: if (rail.doc.redo()) rail.status("Redone")
         }
         IconButton {
-            glyph: "✕"
+            glyph: "\u{F01FE}"
             flat: true
             enabled: rail.annotationCount > 0
             tip: "Clear every annotation"
