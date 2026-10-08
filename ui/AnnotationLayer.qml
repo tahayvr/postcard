@@ -30,8 +30,8 @@ Item {
     readonly property real hairline: Math.max(1, 1.5 / anno.viewScale)
     readonly property real handle: 9 / anno.viewScale
     readonly property real slop: 6 / anno.viewScale
-    // A box or ellipse is framed by one screen pixel, set this far out from
-    // its stroke so the two never sit on each other.
+    // A selected mark is framed by one screen pixel, set this far out from
+    // its edge so the frame never sits on a stroke.
     readonly property real px: 1 / anno.viewScale
     readonly property real frameGap: 2 / anno.viewScale
     // From the edge of the shape to the middle of that frame line, where its
@@ -63,9 +63,9 @@ Item {
                                          ? a.color : anno.doc.inkColor
             readonly property real stroke: Math.max(1, a.width)
             readonly property bool sizedByContent: a.kind === "text"
-            // Drawn with a frame and white corners, and resized from anywhere
-            // along a side rather than by a handle on it.
-            readonly property bool framed: a.kind === "box" || a.kind === "ellipse"
+            // Everything but a line is selected in a frame with white corners,
+            // and where it has sides, resized from anywhere along one.
+            readonly property bool framed: a.kind !== "arrow"
             // Where the mark sits by the model. During a move the item is
             // dragged away from this and the model only catches up on
             // release, so anything placed inside the item measures from here
@@ -368,12 +368,11 @@ Item {
             // a box around it would read as something to resize like a box.
             Rectangle {
                 anchors.fill: parent
-                anchors.margins: entry.framed ? -(anno.frameGap + anno.px) : -4 / anno.viewScale
-                visible: anno.editable && entry.selected && !anno.doc.exporting
-                         && entry.a.kind !== "arrow"
+                anchors.margins: -(anno.frameGap + anno.px)
+                visible: anno.editable && entry.selected && !anno.doc.exporting && entry.framed
                 color: "transparent"
                 border.color: Color.accent
-                border.width: entry.framed ? anno.px : anno.hairline
+                border.width: anno.px
                 radius: 0
             }
 
@@ -508,9 +507,9 @@ Item {
                 onReleased: anno.doc.annotationsEdited()
             }
 
-            // A framed shape's sides are pulled from anywhere along the frame,
-            // outside the stroke, which is left to moving it. The corner
-            // handles are laid over the ends of these.
+            // A mark's sides are pulled from anywhere along the frame, outside
+            // the stroke, which is left to moving it. The corner handles are
+            // laid over the ends of these.
             Repeater {
                 model: ["t", "r", "b", "l"]
                 delegate: MouseArea {
@@ -521,7 +520,8 @@ Item {
                     property real offX: 0
                     property real offY: 0
 
-                    visible: entry.framed && anno.editable && entry.alone && !anno.doc.exporting
+                    visible: Model.hasSides(entry.a.kind) && anno.editable && entry.alone
+                             && !anno.doc.exporting
                     enabled: edge.visible
                     x: edge.modelData === "r" ? entry.width : edge.modelData === "l" ? -edge.reach : 0
                     y: edge.modelData === "b" ? entry.height : edge.modelData === "t" ? -edge.reach : 0
@@ -555,7 +555,7 @@ Item {
                 }
             }
 
-            // Corners and sides to pull it by, or the two ends of an arrow.
+            // Corners to pull it by, or the ends and middle of an arrow.
             // A fixed count, so a delegate is never rebuilt out from under a
             // drag. A text label's corners are where its text ends, which
             // only this delegate can measure.
@@ -565,10 +565,9 @@ Item {
                     id: knob
                     required property int index
                     readonly property var spot: Model.resizeHandles(entry.a, entry.width, entry.height)[knob.index] || null
+                    // The sides are the strips above.
                     readonly property bool side: knob.spot !== null && Model.isSideHandle(knob.spot.key)
-                    readonly property bool across: knob.side && (knob.spot.key === "t" || knob.spot.key === "b")
-                    readonly property bool white: entry.framed || entry.a.kind === "arrow"
-                    // A framed shape's corners sit on its frame, outside the stroke.
+                    // A corner sits on the frame, outside the stroke.
                     readonly property real outX: !entry.framed || !knob.spot ? 0
                         : knob.spot.key.indexOf("l") !== -1 ? -anno.frameOut
                         : knob.spot.key.indexOf("r") !== -1 ? anno.frameOut : 0
@@ -578,23 +577,17 @@ Item {
                     property real offX: 0
                     property real offY: 0
 
-                    // A side too short to hold a bar clear of its corners
-                    // is left to them; a framed shape's sides are its frame.
-                    visible: knob.spot !== null && anno.editable && entry.alone
+                    visible: knob.spot !== null && !knob.side && anno.editable && entry.alone
                              && !anno.doc.exporting
-                             && (!knob.side || (!entry.framed
-                                 && Math.abs(knob.across ? entry.a.w : entry.a.h) > anno.handle * 5))
                     x: (knob.spot ? knob.spot.x - entry.originX : 0) + knob.outX - width / 2
                     y: (knob.spot ? knob.spot.y - entry.originY : 0) + knob.outY - height / 2
-                    width: knob.white ? anno.handle * 0.9 : !knob.side ? anno.handle
-                         : knob.across ? anno.handle * 2.4 : anno.handle * 0.7
-                    height: knob.white ? anno.handle * 0.9 : !knob.side ? anno.handle
-                          : knob.across ? anno.handle * 0.7 : anno.handle * 2.4
+                    width: anno.handle * 0.9
+                    height: anno.handle * 0.9
                     // The ends of a line are points, not corners.
                     radius: entry.a.kind === "arrow" ? width / 2 : 0
-                    color: knob.white ? "white" : Color.accent
-                    border.width: knob.white ? anno.px : anno.hairline
-                    border.color: knob.white ? Color.accent : Qt.rgba(0, 0, 0, 0.55)
+                    color: "white"
+                    border.width: anno.px
+                    border.color: Color.accent
 
                     MouseArea {
                         anchors.fill: parent
@@ -604,8 +597,6 @@ Item {
                             var k = knob.spot ? knob.spot.key : "";
                             if (k === "tl" || k === "br") return Qt.SizeFDiagCursor;
                             if (k === "tr" || k === "bl") return Qt.SizeBDiagCursor;
-                            if (k === "t" || k === "b") return Qt.SizeVerCursor;
-                            if (k === "l" || k === "r") return Qt.SizeHorCursor;
                             return Qt.SizeAllCursor;
                         }
 
