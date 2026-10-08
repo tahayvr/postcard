@@ -4,14 +4,13 @@ import qs.Commons
 import "controls"
 import "../lib/Model.js" as Model
 
-// What Postcard is, where to get help, and the keys. It takes the inspector's
-// place like the settings do.
+// Which Postcard this is, where to get help, and the keys no button shows.
+// It takes the inspector's place like the settings do.
 Flickable {
     id: about
     property var manifest: null
     readonly property string repoUrl: "https://github.com/tahayvr/postcard"
     readonly property string sponsorUrl: "https://github.com/sponsors/tahayvr"
-    readonly property string pluginId: manifest && manifest.id ? manifest.id : "tahayvr.postcard"
 
     // The overlay covers the screen, so the browser would open behind it.
     signal linkOpened()
@@ -59,15 +58,6 @@ Flickable {
                 font.family: Style.font.family
                 font.pixelSize: Style.font.caption
             }
-            Text {
-                width: parent.width
-                text: about.manifest && about.manifest.description ? about.manifest.description : ""
-                visible: text !== ""
-                wrapMode: Text.WordWrap
-                color: Ui.text
-                font.family: Style.font.family
-                font.pixelSize: Style.font.bodySmall
-            }
             Flow {
                 width: parent.width
                 spacing: Ui.gap
@@ -104,29 +94,13 @@ Flickable {
                     onClicked: about.open(about.repoUrl + "/issues/new")
                 }
             }
-            Text {
-                width: parent.width
-                text: "Scripts can drive the editor. To list what they can call:"
-                wrapMode: Text.WordWrap
-                color: Ui.textMuted
-                font.family: Style.font.family
-                font.pixelSize: Style.font.caption
-            }
-            Text {
-                width: parent.width
-                text: "omarchy-shell shell call " + about.pluginId + " help"
-                wrapMode: Text.WrapAnywhere
-                color: Ui.text
-                font.family: Model.textFamily("mono")
-                font.pixelSize: Style.font.caption
-            }
         }
 
         Section {
             title: "Keys"
 
             Repeater {
-                model: Model.KEYS
+                model: Model.KEYS.filter(function (k) { return !k[2]; })
                 delegate: Column {
                     id: entry
                     required property var modelData
