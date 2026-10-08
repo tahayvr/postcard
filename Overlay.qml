@@ -143,6 +143,9 @@ Item {
         if (!eyedropProc.running) eyedropping = false;
         if (!captureProc.running) capturing = false;
         doc.selectedId = "";
+        // The overlay is kept loaded, so a panel left open would greet the
+        // next picture instead of the inspector.
+        editor.panel = "";
     }
 
     function dismiss() {
