@@ -95,14 +95,14 @@ Loader {
         id: captureComp
         Row {
             spacing: Ui.gap
-            IconButton { glyph: "⬚"; label: "Region"; onClicked: opts.captureRequested("region") }
-            IconButton { glyph: "◰"; label: "Window"; onClicked: opts.captureRequested("windows") }
+            IconButton { glyph: "\u{F0489}"; label: "Region"; onClicked: opts.captureRequested("region") }
+            IconButton { glyph: "\uf2d0"; label: "Window"; onClicked: opts.captureRequested("windows") }
 
             // Joined, since the delay belongs to Screen alone: region and
             // window pickers wait for a click anyway, which closes any menu.
             Row {
                 IconButton {
-                    glyph: "⬜"
+                    glyph: "\u{F0379}"
                     label: "Screen"
                     tip: CaptureDelay.seconds
                          ? "Capture the whole screen in " + CaptureDelay.seconds + " seconds"
@@ -111,7 +111,7 @@ Loader {
                 }
                 Rectangle { width: 1; height: Ui.button; color: Ui.hairline }
                 IconButton {
-                    glyph: "◷"
+                    glyph: "\uf017"
                     label: CaptureDelay.label(CaptureDelay.seconds)
                     rest: Ui.fillRaised
                     active: CaptureDelay.seconds > 0
@@ -119,14 +119,14 @@ Loader {
                     onClicked: CaptureDelay.cycle()
                 }
             }
-            IconButton { glyph: "‹›"; label: "Code"; tip: "Selected text as a code card"; onClicked: opts.codeRequested() }
+            IconButton { glyph: "\uf121"; label: "Code"; tip: "Selected text as a code card"; onClicked: opts.codeRequested() }
 
             // Another shot beside the one on the card, rather than in its
             // place like the buttons before it.
             IconButton {
                 id: addShot
                 visible: opts.doc.hasContent && opts.doc.kind === "shot"
-                glyph: "+"
+                glyph: "\uf067"
                 label: "Add"
                 tip: "Put another shot beside this one"
                 active: addMenu.opened
@@ -314,13 +314,13 @@ Loader {
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: Ui.gap
                 IconButton {
-                    glyph: "□"
+                    glyph: "\u{F0763}"
                     label: "Rectangle"
                     active: opts.doc.spotShape === "rect"
                     onClicked: opts.doc.spotShape = "rect"
                 }
                 IconButton {
-                    glyph: "○"
+                    glyph: "\u{F0766}"
                     label: "Ellipse"
                     active: opts.doc.spotShape === "ellipse"
                     onClicked: opts.doc.spotShape = "ellipse"
@@ -363,7 +363,7 @@ Loader {
 
             IconButton {
                 visible: opts.doc.cropped
-                glyph: "\u21ba"
+                glyph: "\u{F0293}"
                 label: "Whole picture"
                 tip: "Back to the picture as it came in"
                 onClicked: opts.uncropRequested()
@@ -405,7 +405,7 @@ Loader {
 
             IconButton {
                 visible: opts.doc.kind === "shot"
-                glyph: "░"
+                glyph: "\u{F00B5}"
                 label: "Find and hide"
                 tip: "Pixelate everything the classes above match"
                 onClicked: opts.autoRedactRequested()

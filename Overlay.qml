@@ -143,6 +143,9 @@ Item {
         if (!eyedropProc.running) eyedropping = false;
         if (!captureProc.running) capturing = false;
         doc.selectedId = "";
+        // The overlay is kept loaded, so a panel left open would greet the
+        // next picture instead of the inspector.
+        editor.panel = "";
     }
 
     function dismiss() {
@@ -1269,7 +1272,7 @@ Item {
     function handleKey(event) {
         if (event.key === Qt.Key_Escape) {
             if (doc.cropUsable) doc.cropRect = Qt.rect(0, 0, 0, 0);
-            else if (editor.settingsOpen) editor.settingsOpen = false;
+            else if (editor.panel !== "") editor.panel = "";
             else if (doc.selectedId !== "") doc.selectedId = "";
             else root.dismiss();
             return true;
@@ -1407,6 +1410,7 @@ Item {
                 doc: doc
                 systemThemes: root.systemThemes
                 saveDir: root.shotDir
+                manifest: root.manifest
                 radius: 0
 
                 onEyedropRequested: function (done) { root.eyedrop(done); }
