@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls as QQC
+import QtQuick.Shapes
 import qs.Commons
 import "controls"
 import "../lib/Model.js" as Model
@@ -14,6 +15,27 @@ Flickable {
 
     // The overlay covers the screen, so the browser would open behind it.
     signal linkOpened()
+
+    // A dotted rule for the keys table, across or, with vertical, down.
+    component Dots: Shape {
+        id: dots
+        property bool vertical: false
+        width: 1
+        height: 1
+        ShapePath {
+            strokeColor: Ui.tint(0.3)
+            strokeWidth: 1
+            strokeStyle: ShapePath.DashLine
+            dashPattern: [1, 3]
+            fillColor: "transparent"
+            startX: dots.vertical ? 0.5 : 0
+            startY: dots.vertical ? 0 : 0.5
+            PathLine {
+                x: dots.vertical ? 0.5 : dots.width
+                y: dots.vertical ? dots.height : 0.5
+            }
+        }
+    }
 
     function open(url) {
         Qt.openUrlExternally(url);
@@ -44,12 +66,17 @@ Flickable {
         width: about.width - Ui.pad * 2
         spacing: Ui.section
 
-        Section {
+        Column {
+            width: parent.width
+            spacing: Ui.row
+
             Wordmark {
+                anchors.horizontalCenter: parent.horizontalCenter
                 markHeight: Style.font.bodySmall * 2
                 tint: Ui.text
             }
             Text {
+                anchors.horizontalCenter: parent.horizontalCenter
                 text: [about.manifest && about.manifest.version ? "Version " + about.manifest.version : "",
                        about.manifest && about.manifest.license ? about.manifest.license + " license" : ""]
                       .filter(function (s) { return s !== ""; }).join("  ·  ")
@@ -58,18 +85,18 @@ Flickable {
                 font.family: Style.font.family
                 font.pixelSize: Style.font.caption
             }
-            Flow {
-                width: parent.width
+            Row {
+                anchors.horizontalCenter: parent.horizontalCenter
                 spacing: Ui.gap
                 IconButton {
-                    glyph: ""
+                    glyph: "\uf004"
                     label: "Sponsor"
                     primary: true
                     tip: "Support Postcard on GitHub Sponsors"
                     onClicked: about.open(about.sponsorUrl)
                 }
                 IconButton {
-                    glyph: ""
+                    glyph: "\uf09b"
                     label: "GitHub"
                     tip: "Postcard on GitHub"
                     onClicked: about.open(about.repoUrl)
@@ -77,19 +104,31 @@ Flickable {
             }
         }
 
-        Section {
-            title: "Help"
+        Column {
+            width: parent.width
+            spacing: Ui.row
 
-            Flow {
-                width: parent.width
+            // A Section's title, centred like the rest of this block.
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: "Help"
+                color: Ui.textMuted
+                font.family: Style.font.family
+                font.pixelSize: Style.font.caption
+                font.capitalization: Font.AllUppercase
+                font.letterSpacing: 1
+            }
+            Row {
+                anchors.horizontalCenter: parent.horizontalCenter
                 spacing: Ui.gap
                 IconButton {
-                    glyph: ""
-                    label: "Read the guide"
+                    glyph: "\uf02d"
+                    label: "Guide"
+                    tip: "How to use Postcard"
                     onClicked: about.open(about.repoUrl + "#readme")
                 }
                 IconButton {
-                    glyph: ""
+                    glyph: "\uf188"
                     label: "Report a problem"
                     onClicked: about.open(about.repoUrl + "/issues/new")
                 }
@@ -99,28 +138,51 @@ Flickable {
         Section {
             title: "Keys"
 
-            Repeater {
-                model: Model.KEYS.filter(function (k) { return !k[2]; })
-                delegate: Column {
-                    id: entry
-                    required property var modelData
-                    width: parent.width
-                    spacing: Style.space(2)
-                    Text {
+            Column {
+                width: parent.width
+
+                Dots { width: parent.width }
+                Repeater {
+                    model: Model.KEYS.filter(function (k) { return !k[2]; })
+                    delegate: Column {
+                        id: entry
+                        required property var modelData
                         width: parent.width
-                        text: entry.modelData[0].replace(/`/g, "")
-                        wrapMode: Text.WordWrap
-                        color: Ui.text
-                        font.family: Style.font.family
-                        font.pixelSize: Style.font.bodySmall
-                    }
-                    Text {
-                        width: parent.width
-                        text: entry.modelData[1].replace(/`/g, "")
-                        wrapMode: Text.WordWrap
-                        color: Ui.textMuted
-                        font.family: Style.font.family
-                        font.pixelSize: Style.font.caption
+
+                        Item {
+                            readonly property real keyWidth: Math.round(entry.width * 0.42)
+                            width: entry.width
+                            height: Math.max(keys.implicitHeight, does.implicitHeight) + Ui.gap * 2
+
+                            Text {
+                                id: keys
+                                x: Ui.gap
+                                y: Ui.gap
+                                width: parent.keyWidth - Ui.gap * 2
+                                text: entry.modelData[0].replace(/`/g, "")
+                                wrapMode: Text.WordWrap
+                                color: Ui.text
+                                font.family: Style.font.family
+                                font.pixelSize: Style.font.caption
+                            }
+                            Dots {
+                                x: parent.keyWidth
+                                height: parent.height
+                                vertical: true
+                            }
+                            Text {
+                                id: does
+                                x: parent.keyWidth + Ui.gap
+                                y: Ui.gap
+                                width: parent.width - x - Ui.gap
+                                text: entry.modelData[1].replace(/`/g, "")
+                                wrapMode: Text.WordWrap
+                                color: Ui.textMuted
+                                font.family: Style.font.family
+                                font.pixelSize: Style.font.caption
+                            }
+                        }
+                        Dots { width: entry.width }
                     }
                 }
             }
