@@ -920,6 +920,35 @@ test("an arrow is drawn from its style", () => {
     eq(Model.newAnnotation("arrow", 0, 0).style, "", "an arrow starts without one");
 });
 
+test("a curved arrow is bent by the handle half way along it", () => {
+    const head = 10;
+    const a = Object.assign(Model.newAnnotation("arrow", 100, 100), { w: 200, h: 0, style: "curved" });
+    eq(a.bend, Model.ARROW_BOW, "a new arrow bows as curves always have");
+    eq(Model.arrowShape(200, 0, "curved", head, -0.5).cy, 100, "a bend to the other side");
+    eq(Model.arrowShape(200, 0, "curved", head, 9).cy, -200, "held to the most a curve can take");
+    eq(Model.arrowShape(200, 0, "straight", head, 0.5).cy, 0, "and only a curve bends");
+
+    const keys = hs => hs.map(h => h.key).join();
+    eq(keys(Model.resizeHandles(a)), "tail,tip,bend");
+    eq(keys(Model.resizeHandles(Object.assign({}, a, { style: "straight" }))), "tail,tip", "a straight arrow has its ends only");
+
+    // The handle sits on the curve, half way from the chord to the control point.
+    const mid = Model.resizeHandles(a)[2];
+    eq([mid.x, mid.y], [200, 100 - 200 * Model.ARROW_BOW / 2]);
+    eq(Model.resizeAnnotation(a, "bend", mid.x, mid.y).bend, Model.ARROW_BOW, "put back where it was, it changes nothing");
+    eq(Model.resizeAnnotation(a, "bend", 260, 160).bend, -0.6, "pulled below, it bows below; along the line counts for nothing");
+    eq(Model.resizeAnnotation(a, "bend", 200, 100).bend, 0, "on the chord it is straight");
+    eq(Model.resizeAnnotation(a, "bend", 200, -1000).bend, Model.ARROW_BOW_MAX);
+    eq(Model.resizeAnnotation(Object.assign({}, a, { w: 0 }), "bend", 0, 0), {}, "an arrow with no length has nothing to bend");
+
+    // The whole curve takes a press, however far it bows out of its box.
+    const far = Object.assign({}, a, { bend: -1 });
+    ok(Model.hitAnnotation(far, 200, 200, 6), "at the far point of the bow");
+    ok(!Model.hitAnnotation(far, 200, 100, 6), "but not on the chord it left");
+    eq(Model.arrowBulge(far), 100);
+    eq(Model.arrowBend({}), Model.ARROW_BOW, "a row from before bends had one bends as before");
+});
+
 test("the spotlight dim is one path with a hole per spotlight", () => {
     const holes = Model.spotlightHoles([
         { kind: "box", x: 0, y: 0, w: 10, h: 10 },

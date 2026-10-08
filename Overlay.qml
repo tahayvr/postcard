@@ -199,6 +199,8 @@ Item {
             a.width = Number(o.width) || doc.inkWidth;
             a.style = o.style ? String(o.style)
                     : (a.kind === "arrow" ? String(doc.arrowStyle) : "");
+            if (o.bend !== undefined && isFinite(Number(o.bend)))
+                a.bend = Model.arrowBend({ bend: Number(o.bend) });
             a.text = o.text ? String(o.text) : "";
             // A label sized by width, as before it had a size, keeps that size.
             if (a.kind === "text") a.font = o.font ? String(o.font) : String(doc.textFont);

@@ -689,31 +689,45 @@ Window {
 
         doc.selectedId = one.uid;
         var k = win.knobs(marks, []);
-        win.check("a box is held at its corners and sides", k.length, 8);
+        win.check("a box is held at its corners", k.length, 4);
         var keys = k.map(function (h) { return h.spot.key; }).sort().join(" ");
-        win.check("one at each", keys, "b bl br l r t tl tr");
+        win.check("one at each", keys, "bl br tl tr");
 
         // A handle is placed against the mark's own origin, so it travels with
         // the item while a move is dragged; measured from the model it would
-        // sit still and jump into place on release.
+        // sit still and jump into place on release. It is centred on the
+        // frame, which stands off the stroke.
         var tl = win.knobs(marks, []).filter(function (h) { return h.spot.key === "tl"; })[0];
         var held = win.entries(marks, [])[0];
-        win.check("a handle sits on its corner",
-                  Math.round(held.x + tl.x + tl.width / 2), 40);
+        win.check("a corner sits on the frame, just out from its corner",
+                  (held.x + tl.x + tl.width / 2).toFixed(2) + "," + (held.y + tl.y + tl.height / 2).toFixed(2),
+                  (40 - marks.frameOut).toFixed(2) + "," + (20 - marks.frameOut).toFixed(2));
         held.x += 30;
         win.check("and moves with the mark as it is dragged",
-                  Math.round(held.x + tl.x + tl.width / 2), 70);
+                  (held.x + tl.x + tl.width / 2).toFixed(2), (70 - marks.frameOut).toFixed(2));
         held.x -= 30;
 
-        var top = win.knobs(marks, []).filter(function (h) { return h.spot.key === "t"; })[0];
-        win.check("a side bar sits at the middle of its edge",
-                  Math.round(held.x + top.x + top.width / 2) + "," + Math.round(held.y + top.y + top.height / 2),
-                  "100,20");
-        win.check("and lies along it", top.width > top.height, true);
+        // A side has no handle: the whole of it, outside the stroke, pulls it.
+        function sides() {
+            var out = [];
+            (function walk(item) {
+                for (var i = 0; i < item.children.length; i++) {
+                    var c = item.children[i];
+                    if (c.hasOwnProperty("edgeSpot") && c.visible) out.push(c);
+                    walk(c);
+                }
+            })(marks);
+            return out;
+        }
+        win.check("and is pulled along each of its sides", sides().length, 4);
+        var top = sides().filter(function (e) { return e.modelData === "t"; })[0];
+        win.check("the top runs the width of the box, just above it",
+                  top.x + "," + (top.y + top.height) + " " + top.width, "0,0 120");
 
         doc.selectedId = two.uid;
         var ends = win.knobs(marks, []);
         win.check("an arrow is held at its two ends", ends.length, 2);
+        win.check("with no sides to pull", sides().length, 0);
         win.check("one of them being the tip",
                   ends.filter(function (h) { return h.spot.key === "tip"; }).length, 1);
 
