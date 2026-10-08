@@ -37,6 +37,16 @@ Flickable {
         }
     }
 
+    // A Section's title, centred like everything else in the panel.
+    component Heading: Text {
+        anchors.horizontalCenter: parent.horizontalCenter
+        color: Ui.textMuted
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+        font.capitalization: Font.AllUppercase
+        font.letterSpacing: 1
+    }
+
     function open(url) {
         Qt.openUrlExternally(url);
         about.linkOpened();
@@ -77,9 +87,7 @@ Flickable {
             }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: [about.manifest && about.manifest.version ? "Version " + about.manifest.version : "",
-                       about.manifest && about.manifest.license ? about.manifest.license + " license" : ""]
-                      .filter(function (s) { return s !== ""; }).join("  ·  ")
+                text: about.manifest && about.manifest.version ? "Version " + about.manifest.version : ""
                 visible: text !== ""
                 color: Ui.textMuted
                 font.family: Style.font.family
@@ -104,39 +112,33 @@ Flickable {
             }
         }
 
+        Rectangle {
+            width: parent.width
+            height: 1
+            color: Ui.hairline
+        }
+
+        Row {
+            anchors.horizontalCenter: parent.horizontalCenter
+            spacing: Ui.gap
+            IconButton {
+                glyph: "\uf02d"
+                label: "Guide"
+                tip: "How to use Postcard"
+                onClicked: about.open(about.repoUrl + "#readme")
+            }
+            IconButton {
+                glyph: "\uf188"
+                label: "Report a problem"
+                onClicked: about.open(about.repoUrl + "/issues/new")
+            }
+        }
+
         Column {
             width: parent.width
             spacing: Ui.row
 
-            // A Section's title, centred like the rest of this block.
-            Text {
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: "Help"
-                color: Ui.textMuted
-                font.family: Style.font.family
-                font.pixelSize: Style.font.caption
-                font.capitalization: Font.AllUppercase
-                font.letterSpacing: 1
-            }
-            Row {
-                anchors.horizontalCenter: parent.horizontalCenter
-                spacing: Ui.gap
-                IconButton {
-                    glyph: "\uf02d"
-                    label: "Guide"
-                    tip: "How to use Postcard"
-                    onClicked: about.open(about.repoUrl + "#readme")
-                }
-                IconButton {
-                    glyph: "\uf188"
-                    label: "Report a problem"
-                    onClicked: about.open(about.repoUrl + "/issues/new")
-                }
-            }
-        }
-
-        Section {
-            title: "Keys"
+            Heading { text: "Keys" }
 
             Column {
                 width: parent.width
