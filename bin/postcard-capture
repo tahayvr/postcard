@@ -20,12 +20,31 @@ case "$mode" in
   *) mode="region" ;;
 esac
 
-# omarchy saves into OMARCHY_SCREENSHOT_DIR and prints the path. The directory
-# must exist first, or omarchy announces creating it with a notification.
+# Older omarchy prints the saved path; Omasnap saves silently. Give each
+# request its own directory so a cancelled capture cannot pick up an old shot.
 dir="${XDG_RUNTIME_DIR:-/tmp}/postcard-captures"
-mkdir -p "$dir"
-path="$(OMARCHY_SCREENSHOT_DIR="$dir" omarchy capture screenshot "$mode" save 2>/dev/null | grep '^/' | tail -n1)"
+mkdir -p "$dir" || exit 1
+scratch="$(mktemp -d "$dir/.capture-XXXXXXXX")" || exit 1
+trap 'rmdir "$scratch" 2>/dev/null || true' EXIT
+path="$(OMARCHY_SCREENSHOT_DIR="$scratch" OMASNAP_SCREENSHOT_DIR="$scratch" omarchy capture screenshot "$mode" save 2>/dev/null | grep '^/' | tail -n1)"
+if [ -z "$path" ] || [ ! -f "$path" ]; then
+  path=""
+  for f in "$scratch"/*.png; do
+    [ -f "$f" ] || continue
+    path="$f"
+    break
+  done
+fi
 [ -n "$path" ] && [ -f "$path" ] || exit 0
+
+# Keep sources in the usual flat scratch directory for existing cleanup and
+# multi-shot retention. A unique prefix also avoids same-second collisions.
+if [[ "$path" == "$scratch/"* ]]; then
+  capture_id="${scratch##*/}"
+  destination="$dir/${capture_id#.}-${path##*/}"
+  mv -- "$path" "$destination" || exit 1
+  path="$destination"
+fi
 
 # Earlier captures go once a new one has replaced them, but not those still
 # on the card beside it: a crop or a new layout reads its source again.
