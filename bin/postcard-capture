@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # postcard-capture [region|windows|fullscreen|smart] [keep...]
-# Take a screenshot and print the path of the file omarchy wrote.
+# Take a screenshot and print the path of the file it wrote.
 # Prints nothing if the user cancelled.
 # The shot is only raw material for the editor, so it goes to the scratch
 # directory, not the user's screenshot folder; the export is what lands there.
@@ -20,12 +20,41 @@ case "$mode" in
   *) mode="region" ;;
 esac
 
-# omarchy saves into OMARCHY_SCREENSHOT_DIR and prints the path. The directory
-# must exist first, or omarchy announces creating it with a notification.
 dir="${XDG_RUNTIME_DIR:-/tmp}/postcard-captures"
-mkdir -p "$dir"
-path="$(OMARCHY_SCREENSHOT_DIR="$dir" omarchy capture screenshot "$mode" save 2>/dev/null | grep '^/' | tail -n1)"
-[ -n "$path" ] && [ -f "$path" ] || exit 0
+mkdir -p "$dir" || exit 1
+
+# Not `omarchy capture screenshot`: on Omasnap it saves without printing the
+# path, notifies with a "Click to edit" that opens Omasnap, and files every
+# shot on Omasnap's recents shelf. omarchy-capture-region is the picker that
+# command used before Omasnap and screen recording still uses, so the pick
+# looks and works the same (frozen screen, window snapping, its keys).
+#
+# Software-composited cursors are baked into what grim captures, so hardware
+# cursors are forced on until grim has run, then put back.
+no_hw_cursors="$(hyprctl getoption cursor:no_hardware_cursors -j 2>/dev/null | jq '.int' 2>/dev/null)"
+set_no_hw_cursors() {
+  hyprctl eval "hl.config({ cursor = { no_hardware_cursors = $1 } })" &>/dev/null ||
+    hyprctl keyword cursor:no_hardware_cursors "$1" &>/dev/null
+}
+freeze=""
+cleanup() {
+  [ -n "$freeze" ] && kill "$freeze" 2>/dev/null
+  [ -n "$no_hw_cursors" ] && set_no_hw_cursors "$no_hw_cursors"
+}
+trap cleanup EXIT
+[ -n "$no_hw_cursors" ] && set_no_hw_cursors 0
+
+# The picker leaves its screen freeze running (PID on the first line), so grim
+# takes the frozen frame rather than the screen as the picker tears down.
+{ read -r freeze; read -r selection; } < <(omarchy-capture-region "$mode" --keep-freeze 2>/dev/null)
+[ -n "${selection:-}" ] || exit 0
+
+# A shot added in the same second as the one beside it must not overwrite it.
+base="$dir/screenshot-$(date +'%Y-%m-%d_%H-%M-%S')"
+path="$base.png"
+n=2
+while [ -e "$path" ]; do path="$base-$n.png"; n=$((n + 1)); done
+grim -g "$selection" "$path" 2>/dev/null && [ -s "$path" ] || { rm -f "$path"; exit 0; }
 
 # Earlier captures go once a new one has replaced them, but not those still
 # on the card beside it: a crop or a new layout reads its source again.
