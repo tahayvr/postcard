@@ -13,7 +13,7 @@ export PATH="$scratch/bin:$PATH"
 # Prints the freeze PID and the selection, the way --keep-freeze does.
 cat > "$scratch/bin/omarchy-capture-region" <<'MOCK'
 #!/usr/bin/env bash
-[[ "$*" == "$TEST_MODE --keep-freeze" ]] || { echo "picker args: $*" >> "$TEST_LOG"; exit 2; }
+[[ "$*" == "${TEST_PICKER:-$TEST_MODE} --keep-freeze" ]] || { echo "picker args: $*" >> "$TEST_LOG"; exit 2; }
 sleep 30 &
 echo "$!" > "$TEST_LOG.freeze"
 echo "$!"
@@ -30,6 +30,7 @@ cat > "$scratch/bin/hyprctl" <<'MOCK'
 #!/usr/bin/env bash
 case "$1" in
   getoption) echo '{"int": 1}' ;;
+  monitors) echo "[{\"name\":\"DP-1\",\"x\":0,\"y\":0,\"width\":${TEST_WIDTH:-3840},\"height\":2160,\"scale\":2,\"transform\":0,\"focused\":true}]" ;;
   keyword) echo "cursor $3" >> "$TEST_LOG" ;;
   *) exit 1 ;;
 esac
@@ -69,4 +70,23 @@ done
 [[ ! -f "$old" ]] || fail "a shot no longer on the card was not cleaned up"
 next="$(capture fullscreen "0,0 1920x1080" ok)"
 [[ "$(find "$dir" -type f)" == "$next" ]] || fail "old captures were not cleaned up"
-echo "capture: every mode, cancel, grim failure, same-second shots, cleanup, freeze and cursor OK"
+
+# The last pick comes back without the picker; fullscreen is not a pick.
+memory="$XDG_RUNTIME_DIR/postcard-last-region"
+rm -f "$memory" "$TEST_LOG.freeze"
+[[ -z "$(bash "$root/bin/postcard-capture" --has-last)" ]] || fail "--has-last said yes with nothing kept"
+shot="$(TEST_PICKER=region capture last "1,2 30x40" ok)"
+[[ -f "$shot" && -e "$TEST_LOG.freeze" ]] || fail "last with nothing kept did not fall back to the region picker"
+capture smart "5,6 70x80" ok >/dev/null
+capture fullscreen "0,0 1920x1080" ok >/dev/null
+[[ "$(bash "$root/bin/postcard-capture" --has-last)" == yes ]] || fail "--has-last missed a kept region"
+[[ -z "$(TEST_WIDTH=2560 bash "$root/bin/postcard-capture" --has-last)" ]] || fail "--has-last took a region from another layout"
+rm -f "$TEST_LOG.freeze"
+shot="$(TEST_PICKER=none capture last "5,6 70x80" ok)"
+[[ -f "$shot" && ! -e "$TEST_LOG.freeze" ]] || fail "last did not take the kept region without the picker"
+cursor_restored || fail "last left the cursor setting changed"
+rm -f "$TEST_LOG.freeze"
+result="$(TEST_WIDTH=2560 TEST_PICKER=region capture last "" ok)"
+[[ -z "$result" && -e "$TEST_LOG.freeze" ]] || fail "last took a region kept on another monitor layout"
+echo "capture: every mode, cancel, grim failure, same-second shots, cleanup, freeze, cursor and last region OK"
+

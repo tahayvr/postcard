@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "ui"
@@ -21,11 +22,25 @@ BarWidget {
           tip: "Capture a region" },
         { glyph: "\uf2d0",    label: "Window", payload: '{"capture":"windows"}',
           tip: "Capture a window" },
+        { glyph: "\uf1da",    label: "Last region", payload: '{"capture":"last"}',
+          tip: "Capture the last region again", needsLast: true },
         { glyph: "\u{F0379}", label: "Screen", mode: "fullscreen", delayed: true,
           tip: "Capture the whole screen" },
         { glyph: "\uf121",    label: "Code",   payload: '{"code":true}',
           tip: "Capture selected text" }
     ]
+
+    // Last is offered only with a region to take, asked each time the menu
+    // opens since a capture or a monitor change can settle it either way.
+    property bool hasLastRegion: false
+    Process {
+        id: lastRegionProc
+        command: ["bash", decodeURIComponent(Qt.resolvedUrl("bin/postcard-capture").toString()
+                                             .replace(/^file:\/\//, "")), "--has-last"]
+        stdout: StdioCollector {
+            onStreamFinished: root.hasLastRegion = text.trim() === "yes"
+        }
+    }
 
     implicitWidth: button.implicitWidth
     implicitHeight: barSize
@@ -62,6 +77,7 @@ BarWidget {
     PopupCard {
         id: menu
         anchorItem: button
+        onOpenChanged: if (menu.open) lastRegionProc.running = true
         bar: root.bar
         contentWidth: menu.fittedContentWidth(Style.space(240))
         contentHeight: menu.fittedContentHeight(body.implicitHeight)
@@ -108,7 +124,7 @@ BarWidget {
                 width: parent.width
 
                 Repeater {
-                    model: root.actions
+                    model: root.actions.filter(function (a) { return !a.needsLast || root.hasLastRegion; })
 
                     Item {
                         id: row

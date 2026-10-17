@@ -13,6 +13,7 @@ Loader {
     id: opts
 
     property var doc
+    property bool hasLastRegion: false
 
     signal captureRequested(string mode)
     signal codeRequested()
@@ -97,6 +98,13 @@ Loader {
             spacing: Ui.gap
             IconButton { glyph: "\u{F0489}"; label: "Region"; onClicked: opts.captureRequested("region") }
             IconButton { glyph: "\uf2d0"; label: "Window"; onClicked: opts.captureRequested("windows") }
+            IconButton {
+                visible: opts.hasLastRegion
+                glyph: "\uf1da"
+                label: "Last"
+                tip: "Capture the last region again"
+                onClicked: opts.captureRequested("last")
+            }
 
             // Joined, since the delay belongs to Screen alone: region and
             // window pickers wait for a click anyway, which closes any menu.
@@ -146,8 +154,9 @@ Loader {
                     Column {
                         spacing: Ui.gap
                         Repeater {
-                            model: [{ key: "region", label: "Region" }, { key: "windows", label: "Window" },
-                                    { key: "fullscreen", label: "Screen" }, { key: "file", label: "File" }]
+                            model: [{ key: "region", label: "Region" }, { key: "windows", label: "Window" }]
+                                   .concat(opts.hasLastRegion ? [{ key: "last", label: "Last region" }] : [])
+                                   .concat([{ key: "fullscreen", label: "Screen" }, { key: "file", label: "File" }])
                             IconButton {
                                 required property var modelData
                                 width: Style.space(110)

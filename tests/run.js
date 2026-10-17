@@ -1067,7 +1067,7 @@ test("themes resolve, and anything unlisted is an installed Omarchy theme", () =
 });
 
 test("a capture is immediate unless it asks for a delay", () => {
-    for (const mode of ["region", "windows", "fullscreen", "smart"])
+    for (const mode of ["region", "windows", "fullscreen", "smart", "last"])
         eq(Model.captureRequest(mode), { mode, seconds: 0 });
     eq(Model.captureRequest("unknown").mode, "region", "an unknown mode is a region");
     eq(Model.captureRequest("").mode, "region");
