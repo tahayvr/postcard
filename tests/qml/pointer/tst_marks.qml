@@ -4,8 +4,7 @@ import "../../../ui"
 import "../../../lib/Model.js" as Model
 
 // Marks pressed and dragged the way a pointer does it. What has to hold is
-// that nothing leaves the picture, here a 400x300 shot with no padding, and
-// that a magnifier's area is taken before the handle lying over it.
+// that nothing leaves the picture, here a 400x300 shot with no padding.
 Item {
     width: 400
     height: 300
@@ -78,22 +77,6 @@ Item {
             var r = row(u);
             compare(r.x + r.w, 400);
             compare(r.y + r.h, 300);
-        }
-
-        function test_magnifier_area_is_taken_first_and_takes_the_lens() {
-            var u = add({ kind: "magnify", x: 0, y: 0, w: 80, h: 80, sx: 100, sy: 200, zoom: 2, width: 3 });
-            // Set up and to the right, its corner handle over the area.
-            doc.updateAnnotation(u, Model.placeMagnifier(100, 200, 20, 2, doc.pictureArea));
-            doc.selectedId = u;
-            wait(20);
-            var before = JSON.parse(JSON.stringify(row(u)));
-            drag(110, 195, -30, -40);
-            var r = row(u);
-            compare(r.sx - before.sx, -30);
-            compare(r.sy - before.sy, -40);
-            compare(r.x - before.x, -30, "the lens went along");
-            compare(r.y - before.y, -40);
-            compare(r.w, before.w, "and was not resized");
         }
 
         function test_a_label_that_grows_slides_back() {

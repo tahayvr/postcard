@@ -163,18 +163,15 @@ test("a selection box takes whatever it touches", () => {
        "drawn backwards, it is where it shows");
     ok(Model.inSelectionBox({ kind: "text", x: 30, y: 30, w: 0, h: 0 }, 25, 25, 10, 10),
        "a label is taken at its corner");
-    const lens = { kind: "magnify", x: 200, y: 200, w: 40, h: 40, sx: 20, sy: 20 };
-    ok(Model.inSelectionBox(lens, 190, 190, 20, 20), "a magnifier by its lens");
-    ok(!Model.inSelectionBox(lens, 10, 10, 20, 20), "not by the area it shows");
 });
 
 test("a pasted mark is a copy of its own, set off from the original", () => {
-    const a = Model.newAnnotation("magnify", 10, 20);
-    a.sx = 5; a.sy = 6; a.text = "x";
+    const a = Model.newAnnotation("box", 10, 20);
+    a.w = 5; a.h = 6; a.text = "x";
     const c = Model.duplicateAnnotation(a, 15, 15);
     ok(c.uid !== a.uid, "a uid of its own");
     eq(c.x, 25); eq(c.y, 35);
-    eq(c.sx, 5, "a magnifier still shows the same area");
+    eq([c.w, c.h], [5, 6], "the same size");
     eq(c.text, "x");
     eq(a.x, 10, "the original is untouched");
     eq(Model.pasteStep(800, 500), 12);
@@ -343,8 +340,8 @@ test("a code card takes at most CODE_MAX of the text, cut at a line", () => {
 });
 
 test("a copied annotation keeps every role and nothing else", () => {
-    const a = Model.newAnnotation("magnify", 3, 4);
-    a.sx = 9; a.text = "hi";
+    const a = Model.newAnnotation("text", 3, 4);
+    a.fontSize = 9; a.text = "hi";
     const row = Object.assign({ objectName: "", extra: 1 }, a);
     const c = Model.plainAnnotation(row);
     eq(JSON.stringify(c), JSON.stringify(a));
@@ -1000,6 +997,21 @@ test("the spotlight dim is one path with a hole per spotlight", () => {
     eq(Model.spotlightHolesPath(cards, []), "", "no spotlight, no ring");
     eq(Model.spotRingWidth(1920, 1080), 4);
     eq(Model.spotRingWidth(300, 200), 2, "never thinner than 2px");
+
+    // A rounded hole hands the lens the same corners the dim cut.
+    const boxes = Model.spotlightHoleBoxes([{ x: 0, y: 0, w: 100, h: 100, top: 12, bottom: 0 }],
+        [{ x: 0, y: 0, w: 50, h: 30, shape: "rounded" }, { x: 40, y: 40, w: 20, h: 20, shape: "ellipse" }]);
+    eq([boxes[0].tl, boxes[0].tr, boxes[0].br, boxes[0].bl], [12, 6, 6, 6], "the card's corner, then its own");
+    eq(boxes[1].shape, "ellipse");
+});
+
+test("a magnifying spotlight shows the middle of its box at whole pixels", () => {
+    eq(Model.spotZoom(3), 3);
+    eq(Model.spotZoom("4"), 4, "as the command line sends it");
+    eq(Model.spotZoom(7), 1, "anything else is off");
+    eq(Model.spotZoom(1), 1);
+    eq(Model.spotLensArea(100, 100, 80, 40, 2), { x: 120, y: 110, w: 40, h: 20 }, "a quarter of the box, centred");
+    eq(Model.spotLensArea(0, 0, 100, 50, 3), { x: 34, y: 17, w: 33, h: 17 }, "rounded to whole pixels");
 });
 
 test("every export format saves under its own extension", () => {
@@ -1188,39 +1200,6 @@ test("a new gradient starts from the one on show", () => {
        "a mesh has no stops to start from");
 });
 
-test("a magnifier is drawn over what it shows, then set beside it", () => {
-    const m = Model.magnifyFromDrag(100, 100, 140, 120, 2);
-    eq([m.sx, m.sy], [120, 110], "the middle of the drag");
-    eq([m.x, m.y, m.w, m.h], [80, 70, 80, 80], "the lens over it, twice the size");
-    const src = Model.magnifySource({ x: m.x, y: m.y, w: m.w, h: m.h, sx: m.sx, sy: m.sy, zoom: 2 });
-    eq(src, { x: 120, y: 110, r: 20 });
-    eq(Model.magnifySource({ x: 0, y: 0, w: 120, h: 120, sx: 5, sy: 5, zoom: 7 }).r, 30,
-       "an unknown zoom is read as the default");
-
-    const lens = Model.placeMagnifier(200, 300, 20, 2, { x: 0, y: 0, w: 1000, h: 600 });
-    ok(lens.x > 200 && lens.y + lens.h < 300, "up and to the right when there is room");
-    eq(lens.w, 80);
-    const corner = Model.placeMagnifier(980, 20, 20, 2, { x: 0, y: 0, w: 1000, h: 600 });
-    ok(corner.x + corner.w < 980 && corner.y > 20, "down and to the left in the top right corner");
-    const cramped = Model.placeMagnifier(50, 50, 40, 4, { x: 0, y: 0, w: 200, h: 200 });
-    eq(cramped.w, 320, "too big for anywhere still keeps its size");
-
-    // A short picture has no room beside the area: the lens is pulled in, over it.
-    const strip = { x: -20, y: -10, w: 1000, h: 120 };
-    const low = Model.placeMagnifier(500, 50, 20, 2, strip);
-    ok(low.y >= strip.y && low.y + low.h <= strip.y + strip.h, "inside the picture top to bottom");
-    ok(low.x >= strip.x && low.x + low.w <= strip.x + strip.w, "and side to side");
-    // The padding counts: room above the shot is room.
-    const padded = Model.placeMagnifier(200, 30, 20, 2, { x: -200, y: -200, w: 1400, h: 1000 });
-    ok(padded.y < 0, "up and to the right, over the padding");
-
-    // Moving the area takes the lens along, and both stop at the first edge.
-    const mag = { kind: "magnify", x: 300, y: 100, w: 80, h: 80, sx: 250, sy: 220, zoom: 2 };
-    eq(Model.moveMagnifierArea(mag, 10, -5, { x: 0, y: 0, w: 1000, h: 600 }), { x: 310, y: 95, sx: 260, sy: 215 });
-    eq(Model.moveMagnifierArea(mag, 0, -500, { x: 0, y: 0, w: 1000, h: 600 }).y, 0, "the lens meets the top first");
-    eq(Model.moveMagnifierArea(mag, -500, 0, { x: 0, y: 0, w: 1000, h: 600 }).sx, 0, "the area meets the left first");
-});
-
 test("marks are kept inside the whole picture", () => {
     const geo = { cardX: 40, cardY: 30, inset: 10, chromeH: 20, frameW: 900, frameH: 700 };
     eq(Model.pictureArea(geo), { x: -50, y: -60, w: 900, h: 700 }, "starting over the padding and title bar");
@@ -1254,40 +1233,6 @@ test("marks are kept inside the whole picture", () => {
     ok(r.y >= tight.y - 0.01 && r.y < tight.y + 1, "to just inside the top");
     eq(Model.bendInside(curve, area), 0.5, "and left alone where it fits");
     eq(Model.bendInside(Object.assign({}, curve, { bend: -0.5 }), tight), -0.5, "a bend the other way had room");
-});
-
-test("a magnifier keeps whole pixels, and a new zoom keeps its lens", () => {
-    const m = Model.magnifyFromDrag(100.4, 100.2, 141, 120.6, 3);
-    eq([m.sx, m.sy], [121, 110], "the middle on a pixel");
-    eq(m.w % 6, 0, "the lens a whole number of source pixels across");
-    const lens = { kind: "magnify", x: 0, y: 0, w: 80, h: 80, sx: 50, sy: 50, zoom: 2, width: 3 };
-    eq(Model.resizeAnnotation(lens, "br", 83, 83).w % 4, 0, "resized in steps of whole source pixels");
-    const z = Model.magnifyRezoom(lens, 4);
-    eq(z.zoom, 4); eq(z.w, 80); eq([z.x, z.y], [0, 0]);
-    eq(Model.magnifySource({ x: z.x, y: z.y, w: z.w, h: z.h, sx: 50, sy: 50, zoom: 4 }).r, 10,
-       "showing less at more zoom");
-});
-
-test("a crop keeps a magnifier by the area it shows, not its lens", () => {
-    const m = { kind: "magnify", x: 500, y: 500, w: 80, h: 80, sx: 20, sy: 20, zoom: 2 };
-    ok(Model.overlapsRect(m, 0, 0, 100, 100), "its area is kept though the lens is cut away");
-    ok(!Model.overlapsRect({ kind: "magnify", x: 0, y: 0, w: 80, h: 80, sx: 500, sy: 500, zoom: 2 },
-                           0, 0, 100, 100), "and dropped when its area is cut away");
-});
-
-test("the line joins the lens and what it shows, edge to edge", () => {
-    const l = Model.magnifyLink(0, 0, 10, 30, 0, 5);
-    eq(l, { x1: 10, y1: 0, x2: 25, y2: 0 });
-    eq(Model.magnifyLink(0, 0, 10, 12, 0, 5), null, "no line when they touch");
-});
-
-test("a magnifier is resized from its corners and stays round", () => {
-    const mag = { kind: "magnify", x: 0, y: 0, w: 80, h: 80, sx: 200, sy: 200, zoom: 2, width: 3 };
-    eq(Model.resizeHandles(mag).length, 4, "corners only");
-    const big = Model.resizeAnnotation(mag, "br", 150, 100);
-    eq(big.w, big.h, "square, so the lens stays a circle");
-    ok(Model.hitAnnotation(mag, 40, 40, 4), "inside the lens");
-    ok(!Model.hitAnnotation(mag, 2, 2, 1), "not the corner of its box");
 });
 
 test("a style is the look of the card, not the marks or the tools", () => {

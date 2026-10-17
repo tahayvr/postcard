@@ -1,8 +1,9 @@
 import QtQuick
 
 // One sample of the source per block: destroyed, not blurred. Shared by the
-// hide tool and by the copy of the shot a magnifier looks through, so a lens
-// over a hidden area shows the same blocks and never what is under them.
+// hide tool and by the copy of the shot a magnifying spotlight looks
+// through, so one over a hidden area shows the same blocks and never what
+// is under them.
 Item {
     id: pix
     property Item source: null

@@ -208,26 +208,26 @@ Window {
         interval: 250
         onTriggered: win.grab("export-spot-ring", function () {
             doc.spotRing = false;
-            // Two magnifiers at 2x, placed by hand: one on the stripes, whose
-            // edges have to stay sharp rather than blend, and one on a hidden
-            // area, which has to show its blocks rather than the stripes
-            // under them.
+            // Two square spotlights magnifying 4x with no dim: one on the
+            // stripes, whose edges have to stay sharp rather than blend,
+            // and one centred just inside a hidden area, so the blocks it
+            // magnifies land outside the hidden mark itself, where nothing
+            // covers them; they have to be blocks rather than the stripes.
             doc.clearAnnotations();
             var hide = Model.newAnnotation("redact", 220, 60);
             hide.w = 60; hide.h = 60; hide.strength = 20;
             doc.annotations.append(hide);
 
-            var onStripes = Model.newAnnotation("magnify", 10, 150);
+            var onStripes = Model.newAnnotation("spotlight", 100, 80);
             onStripes.w = 40; onStripes.h = 40;
-            onStripes.sx = 120; onStripes.sy = 100; onStripes.zoom = 2;
-            onStripes.color = "#00ff00"; onStripes.width = 1;
             doc.annotations.append(onStripes);
 
-            var onHidden = Model.newAnnotation("magnify", 330, 150);
+            var onHidden = Model.newAnnotation("spotlight", 255, 70);
             onHidden.w = 40; onHidden.h = 40;
-            onHidden.sx = 250; onHidden.sy = 90; onHidden.zoom = 2;
-            onHidden.color = "#00ff00"; onHidden.width = 1;
             doc.annotations.append(onHidden);
+            doc.spotShape = "rect";
+            doc.spotDim = 0;
+            doc.spotZoom = 4;
             doc.selectedId = "";
             doc.annotationsEdited();
             magnifyTimer.start();
@@ -238,6 +238,7 @@ Window {
         id: magnifyTimer
         interval: 350
         onTriggered: win.grab("export-magnify", function () {
+            doc.spotZoom = 1;
             // Two shots on one card: the picture and a solid blue one beside
             // it, from a sheet render.sh composed. Each card has to show its
             // own part of the sheet, 1:1, with the background in the gap.
