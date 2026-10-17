@@ -135,6 +135,19 @@ Window {
         id: grabTimer
         interval: 600
         onTriggered: win.grab("export", function () {
+            // The same frame with the wrapper displayed zoomed in, as the
+            // editor shows it: the grab renders the item at its own size, so
+            // the file has to come out the same.
+            grabRoot.scale = 2.5;
+            zoomTimer.start();
+        })
+    }
+
+    Timer {
+        id: zoomTimer
+        interval: 250
+        onTriggered: win.grab("export-zoomed", function () {
+            grabRoot.scale = 0.5;
             // The inset extends the shot's edge color: the left edge of this
             // synthetic shot is white, the right edge black.
             doc.shotEdge = "#ff00ff";

@@ -27,7 +27,7 @@ fi
 here="$tree/tests/qml"
 rm -f "$out/export.png" "$out/export-inset.png" "$out/export-gradient.png" "$out/export-mesh.png" \
       "$out/export-odd.png" "$out/export-spot.png" "$out/export-spot-oval.png" "$out/export-spot-ring.png" "$out/export-magnify.png" \
-      "$out/export-two.png"
+      "$out/export-two.png" "$out/export-zoomed.png"
 
 # Synthetic screenshot: white left half, black right half, and a band of
 # 1px red/blue stripes through the middle that redaction has to destroy.
@@ -197,6 +197,27 @@ if [ $gpu = 1 ]; then
     iexpect "annotations follow the shot"          100 123   0   0 255
   else
     echo "FAIL inset export missing"; fail=1
+  fi
+fi
+
+# ---- zoomed view -----------------------------------------------------------
+# The first frame again, grabbed while the wrapper was displayed at 2.5x as
+# the editor's zoom shows it. The zoom is display only: the file has to be the
+# same size, the band still pixel for pixel, and in fact the very same picture.
+if [ $gpu = 1 ]; then
+  if [ -f "$out/export-zoomed.png" ]; then
+    zsize="$(magick "$out/export-zoomed.png" -format "%wx%h" info:)"
+    [ "$zsize" = "480x280" ] && echo "ok   zoomed export size $zsize" \
+      || { echo "FAIL zoomed export size: $zsize (want 480x280)"; fail=1; }
+    magick "$out/export-zoomed.png" -crop 50x100+140+90 +repage "$out/band-zoomed.png"
+    rmse="$(magick compare -metric RMSE "$out/band-source.png" "$out/band-zoomed.png" null: 2>&1 | awk '{print $1}')"
+    [ "${rmse%%.*}" = "0" ] && echo "ok   zoomed export is pixel-exact (band RMSE $rmse)" \
+      || { echo "FAIL zoomed export resamples the shot (band RMSE $rmse)"; fail=1; }
+    d="$(magick compare -metric AE "$out/export.png" "$out/export-zoomed.png" null: 2>&1 | cut -d' ' -f1)"
+    [ "$d" = "0" ] && echo "ok   zooming the view leaves the export untouched" \
+      || { echo "FAIL the zoomed view exported a different picture ($d pixels differ)"; fail=1; }
+  else
+    echo "FAIL zoomed export missing"; fail=1
   fi
 fi
 

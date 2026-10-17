@@ -1510,6 +1510,37 @@ Item {
         return true;
     }
 
+    // With nothing selected the arrow keys scroll a zoomed view instead,
+    // further with Shift.
+    function panView(event) {
+        if (!doc.hasContent || editor.zoom <= 1) return false;
+        if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return false;
+        var step = (event.modifiers & Qt.ShiftModifier) ? 200 : 40;
+        var dx = 0, dy = 0;
+        switch (event.key) {
+        case Qt.Key_Left:  dx = -step; break;
+        case Qt.Key_Right: dx = step;  break;
+        case Qt.Key_Up:    dy = -step; break;
+        case Qt.Key_Down:  dy = step;  break;
+        default: return false;
+        }
+        editor.pan(dx, dy);
+        return true;
+    }
+
+    // Plus and minus step the zoom, 0 fits the picture again; with or
+    // without Ctrl, the way browsers take them.
+    function zoomKey(event) {
+        if (!doc.hasContent) return false;
+        if (event.modifiers & (Qt.AltModifier | Qt.MetaModifier)) return false;
+        switch (event.key) {
+        case Qt.Key_Plus: case Qt.Key_Equal: editor.zoomStep(1); return true;
+        case Qt.Key_Minus: case Qt.Key_Underscore: editor.zoomStep(-1); return true;
+        case Qt.Key_0: editor.zoomReset(); return true;
+        }
+        return false;
+    }
+
     function handleKey(event) {
         if (event.key === Qt.Key_Escape) {
             if (doc.cropUsable) doc.cropRect = Qt.rect(0, 0, 0, 0);
@@ -1532,6 +1563,8 @@ Item {
         }
 
         if (nudgeSelected(event)) return true;
+        if (panView(event)) return true;
+        if (zoomKey(event)) return true;
 
         if (event.modifiers & Qt.ControlModifier) {
             switch (event.key) {
