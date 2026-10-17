@@ -354,7 +354,7 @@ Loader {
 
             IconButton {
                 anchors.verticalCenter: parent.verticalCenter
-                glyph: "\u{F0E95}"
+                glyph: "\u{F00CE}"
                 tip: opts.doc.spotRing ? "Ring around each spotlight, click to remove" : "Add a ring around each spotlight"
                 active: opts.doc.spotRing
                 onClicked: opts.doc.spotRing = !opts.doc.spotRing
