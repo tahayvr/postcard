@@ -8,6 +8,23 @@ here="$(cd "$(dirname "$0")" && pwd)"
 # seven, which knocked the live overlay out from under whoever was using it.
 out="${XDG_RUNTIME_DIR:-/tmp}/postcard-tests"
 mkdir -p "$out"
+
+# Qt 6.12 added a Color singleton to QtQuick, and a C++ singleton wins over
+# the stub's composite one whatever the import order, so under the plain qml
+# runtime every Color.* came out undefined. Quickshell resolves qs.Commons
+# first, so the shell itself is unaffected. The harness therefore runs on a
+# copy in the scratch directory whose `import QtQuick` stops at 6.11, before
+# Color existed; the plugin's own files are left as they are.
+root="$(cd "$here/../.." && pwd)"
+tree="$out/tree"
+rm -rf "$tree"
+mkdir -p "$tree/tests"
+cp -r "$root/ui" "$root/lib" "$root/assets" "$tree/"
+cp -r "$here" "$tree/tests/"
+if grep -q '"QtQuick/Color 6.12"' /usr/lib/qt6/qml/QtQuick/plugins.qmltypes 2>/dev/null; then
+  find "$tree" -name '*.qml' -exec sed -i 's/^import QtQuick$/import QtQuick 6.11/' {} +
+fi
+here="$tree/tests/qml"
 rm -f "$out/export.png" "$out/export-inset.png" "$out/export-gradient.png" "$out/export-mesh.png" \
       "$out/export-odd.png" "$out/export-spot.png" "$out/export-spot-oval.png" "$out/export-magnify.png" \
       "$out/export-two.png"
@@ -22,7 +39,7 @@ magick -size 400x200 xc:white -fill black -draw "rectangle 200,0 399,199" \
 # A second shot, and the sheet the two make side by side with an 8px gap,
 # as the overlay would compose it.
 magick -size 100x200 xc:'#0000ff' "$out/blue.png"
-bash "$here/../../bin/postcard-sheet" "$out/sheet.png" 508 200 \
+bash "$root/bin/postcard-sheet" "$out/sheet.png" 508 200 \
      "$out/shot.png" 0 0 400 200 400 200 0 0 "$out/blue.png" 0 0 100 200 100 200 408 0 >/dev/null
 
 # The offscreen platform can only use the software scene graph, which does
