@@ -94,84 +94,87 @@ Loader {
 
     Component {
         id: captureComp
+        // Grouped by what they bring in: a screenshot, text, another picture.
         Row {
-            spacing: Ui.gap
-            IconButton { glyph: "\u{F0489}"; tip: "Capture a region"; onClicked: opts.captureRequested("region") }
-            IconButton { glyph: "\uf2d0"; tip: "Capture a window"; onClicked: opts.captureRequested("windows") }
-            IconButton {
-                visible: opts.hasLastRegion
-                glyph: "\uf1da"
-                tip: "Capture the last region again"
-                onClicked: opts.captureRequested("last")
-            }
-
-            // Joined, since the delay belongs to Screen alone: region and
-            // window pickers wait for a click anyway, which closes any menu.
+            spacing: Ui.section
             Row {
+                spacing: Ui.gap
+                IconButton { glyph: "\u{F0489}"; tip: "Capture a region"; onClicked: opts.captureRequested("region") }
+                IconButton { glyph: "\uf2d0"; tip: "Capture a window"; onClicked: opts.captureRequested("windows") }
                 IconButton {
-                    glyph: "\u{F0379}"
-                    tip: CaptureDelay.seconds
-                         ? "Capture the whole screen in " + CaptureDelay.seconds + " seconds"
-                         : "Capture the whole screen"
-                    onClicked: opts.captureRequested("fullscreen")
+                    visible: opts.hasLastRegion
+                    glyph: "\uf1da"
+                    tip: "Capture the last region again"
+                    onClicked: opts.captureRequested("last")
                 }
-                Rectangle { width: 1; height: Ui.button; color: Ui.hairline }
-                IconButton {
-                    glyph: "\uf017"
-                    // The seconds stay on the button: they are a setting, and
-                    // easy to forget when only a tooltip says.
-                    label: CaptureDelay.seconds ? CaptureDelay.label(CaptureDelay.seconds) : ""
-                    rest: Ui.fillRaised
-                    active: CaptureDelay.seconds > 0
-                    tip: CaptureDelay.seconds
-                         ? "Screen waits " + CaptureDelay.seconds + " seconds, click to change"
-                         : "Screen captures at once, click to add a delay"
-                    onClicked: CaptureDelay.cycle()
+
+                // Joined, since the delay belongs to Screen alone: region and
+                // window pickers wait for a click anyway, which closes any menu.
+                Row {
+                    IconButton {
+                        glyph: "\u{F0379}"
+                        tip: CaptureDelay.seconds
+                             ? "Capture the whole screen in " + CaptureDelay.seconds + " seconds"
+                             : "Capture the whole screen"
+                        onClicked: opts.captureRequested("fullscreen")
+                    }
+                    Rectangle { width: 1; height: Ui.button; color: Ui.hairline }
+                    IconButton {
+                        label: CaptureDelay.label(CaptureDelay.seconds)
+                        rest: Ui.fillRaised
+                        active: CaptureDelay.seconds > 0
+                        tip: CaptureDelay.seconds
+                             ? "Screen waits " + CaptureDelay.seconds + " seconds, click to change"
+                             : "Screen captures at once, click to add a delay"
+                        onClicked: CaptureDelay.cycle()
+                    }
                 }
             }
             IconButton { glyph: "\uf121"; tip: "Selected text as a code card"; onClicked: opts.codeRequested() }
+            Row {
+                spacing: Ui.gap
+                // Another shot beside the one on the card, rather than in its
+                // place like the buttons before it.
+                IconButton {
+                    id: addShot
+                    visible: opts.doc.hasContent && opts.doc.kind === "shot"
+                    glyph: "\uf067"
+                    tip: "Put another shot beside this one"
+                    active: addMenu.opened
+                    onClicked: addMenu.opened ? addMenu.close() : addMenu.open()
 
-            // Another shot beside the one on the card, rather than in its
-            // place like the buttons before it.
-            IconButton {
-                id: addShot
-                visible: opts.doc.hasContent && opts.doc.kind === "shot"
-                glyph: "\uf067"
-                tip: "Put another shot beside this one"
-                active: addMenu.opened
-                onClicked: addMenu.opened ? addMenu.close() : addMenu.open()
-
-                QQC.Popup {
-                    id: addMenu
-                    y: addShot.height + Ui.gap
-                    padding: Ui.gap
-                    focus: true
-                    closePolicy: QQC.Popup.CloseOnEscape | QQC.Popup.CloseOnPressOutside
-                    background: Rectangle {
-                        color: Color.menu && Color.menu.background ? Color.menu.background : Color.background
-                        border.width: 1
-                        border.color: Ui.borderActive
-                    }
-                    Column {
-                        spacing: Ui.gap
-                        Repeater {
-                            model: [{ key: "region", label: "Region" }, { key: "windows", label: "Window" }]
-                                   .concat(opts.hasLastRegion ? [{ key: "last", label: "Last region" }] : [])
-                                   .concat([{ key: "fullscreen", label: "Screen" }, { key: "file", label: "File" }])
-                            IconButton {
-                                required property var modelData
-                                width: Style.space(110)
-                                label: modelData.label
-                                onClicked: {
-                                    addMenu.close();
-                                    opts.addShotRequested(modelData.key);
+                    QQC.Popup {
+                        id: addMenu
+                        y: addShot.height + Ui.gap
+                        padding: Ui.gap
+                        focus: true
+                        closePolicy: QQC.Popup.CloseOnEscape | QQC.Popup.CloseOnPressOutside
+                        background: Rectangle {
+                            color: Color.menu && Color.menu.background ? Color.menu.background : Color.background
+                            border.width: 1
+                            border.color: Ui.borderActive
+                        }
+                        Column {
+                            spacing: Ui.gap
+                            Repeater {
+                                model: [{ key: "region", label: "Region" }, { key: "windows", label: "Window" }]
+                                       .concat(opts.hasLastRegion ? [{ key: "last", label: "Last region" }] : [])
+                                       .concat([{ key: "fullscreen", label: "Screen" }, { key: "file", label: "File" }])
+                                IconButton {
+                                    required property var modelData
+                                    width: Style.space(110)
+                                    label: modelData.label
+                                    onClicked: {
+                                        addMenu.close();
+                                        opts.addShotRequested(modelData.key);
+                                    }
                                 }
                             }
                         }
                     }
                 }
+                IconButton { glyph: "\uf1c5"; tip: "Open a file"; onClicked: opts.openRequested() }
             }
-            IconButton { glyph: "\uf1c5"; tip: "Open a file"; onClicked: opts.openRequested() }
         }
     }
 
