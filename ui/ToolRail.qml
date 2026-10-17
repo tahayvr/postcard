@@ -1,5 +1,4 @@
 import QtQuick
-import qs.Commons
 import "controls"
 
 Item {
@@ -42,20 +41,10 @@ Item {
                 required property var modelData
                 glyph: modelData.glyph
                 active: rail.doc.tool === modelData.key
-                tip: modelData.name
+                tip: modelData.name + " (" + modelData.hint + ")"
                 onClicked: {
                     rail.doc.tool = modelData.key;
                     rail.doc.selectedId = "";
-                }
-
-                Text {
-                    anchors.right: parent.right
-                    anchors.bottom: parent.bottom
-                    anchors.margins: 3
-                    text: parent.modelData.hint
-                    color: Ui.textFaint
-                    font.family: Style.font.family
-                    font.pixelSize: Style.font.caption * 0.8
                 }
             }
         }
