@@ -1048,7 +1048,7 @@ test("settings come back off disk at this version", () => {
 });
 
 test("every config file is versioned the same way", () => {
-    for (const kind of ["settings", "colors", "presets"]) {
+    for (const kind of ["settings", "colors", "presets", "recent"]) {
         const spec = Model.CONFIG_FILES[kind];
         eq(spec.migrations.length, spec.version, kind + ": a step for every version before this one");
         const m = Model.migrateConfig(kind, { a: 1 });
@@ -1278,6 +1278,130 @@ test("presets keep their order, and are found by id or by name", () => {
     eq(Model.findPreset(list, "Default").id, Model.DEFAULT_PRESET);
     eq(Model.findPreset(list, "nope"), null);
     eq(Model.forgetPreset(list, "a").map(p => p.id), ["b"]);
+});
+
+test("a hidden area is pixelated unless it says solid", () => {
+    eq(Model.redactStyle({ style: "solid" }), "solid");
+    eq(Model.redactStyle({ style: "" }), "pixelate", "rows from before it");
+    eq(Model.redactStyle({ style: "curved" }), "pixelate", "an arrow's style means nothing here");
+    eq(Model.redactStyle(null), "pixelate");
+    ok(Model.REDACT_STYLES.map(s => s.key).indexOf("solid") !== -1);
+    ok("redactStyle" in Model.SETTABLE, "settable");
+});
+
+test("a box is filled, rounded, or hollow with a hint of rounding", () => {
+    const a = Model.newAnnotation("box", 0, 0);
+    eq(a.fill, false); eq(a.corner, -1, "follows the stroke until given corners");
+    eq(Model.boxRadius(a, 4), 6, "the look every box had: 1.5 strokes");
+    eq(Model.boxRadius({ corner: 0, w: 50, h: 50 }, 4), 0, "square when asked");
+    eq(Model.boxRadius({ corner: 20, w: 50, h: 50 }, 4), 20);
+    eq(Model.boxRadius({ corner: 40, w: 50, h: 50 }, 4), 25, "never past half the shorter side");
+    eq(Model.boxRadius({ w: 50, h: 50 }, 4), 6, "a row with no corner role at all");
+    // A filled shape is hit anywhere inside it.
+    ok(Model.hitAnnotation({ kind: "box", x: 10, y: 10, w: 100, h: 50, width: 4, fill: true }, 60, 35, 6));
+    ok(Model.hitAnnotation({ kind: "ellipse", x: 0, y: 0, w: 100, h: 100, width: 4, fill: true }, 50, 50, 6));
+    ok(!Model.hitAnnotation({ kind: "ellipse", x: 0, y: 0, w: 100, h: 100, width: 4, fill: true }, 4, 4, 6),
+       "but not in the corner of its box");
+    for (const k of ["shapeFill", "shapeCorner"]) ok(k in Model.SETTABLE, k + " settable");
+});
+
+test("shift squares a drag and holds an arrow to 45 degrees", () => {
+    eq(Model.constrainDrag("box", 100, 40), { w: 40, h: 40 }, "the smaller extent");
+    eq(Model.constrainDrag("box", -100, 40), { w: -40, h: 40 }, "drawn leftwards");
+    eq(Model.constrainDrag("ellipse", 30, -90), { w: 30, h: -30 });
+    const flat = Model.constrainDrag("arrow", 100, 10);
+    near(flat.h, 0, 0.01, "nearly flat snaps flat"); near(flat.w, 100.5, 0.01, "keeping its length");
+    const diag = Model.constrainDrag("arrow", 100, 80);
+    near(diag.w, diag.h, 0.01, "nearly diagonal snaps to 45");
+    const up = Model.constrainDrag("arrow", 5, -100);
+    near(up.w, 0, 0.01); near(up.h, -100.1, 0.1);
+    eq(Model.constrainDrag("arrow", 0, 0), { w: 0, h: 0 }, "nothing yet is nothing");
+    for (const k of ["box", "ellipse", "spotlight", "highlight", "redact"]) ok(Model.drawsFromCentre(k), k);
+    ok(!Model.drawsFromCentre("arrow") && !Model.drawsFromCentre("text"));
+});
+
+test("alt draws from the middle out, and stops at the picture", () => {
+    eq(Model.centredDrag(100, 100, 30, 20), { x: 70, y: 80, w: 60, h: 40 });
+    eq(Model.centredDrag(100, 100, -30, -20), { x: 70, y: 80, w: 60, h: 40 }, "whichever way the pointer went");
+    const area = { x: 0, y: 0, w: 400, h: 300 };
+    eq(Model.centredDrag(20, 100, 50, 50, area), { x: 0, y: 50, w: 40, h: 100 }, "cut to the nearer edge on the left");
+    eq(Model.centredDrag(390, 290, 50, 50, area), { x: 380, y: 280, w: 20, h: 20 }, "and the far corner");
+});
+
+test("shift on a corner keeps the proportions", () => {
+    const fixed = { x: 0, y: 0 }, taken = { x: 100, y: 50 };
+    eq(Model.aspectLockedPoint(fixed, taken, { x: 200, y: 60 }), { x: 200, y: 100 }, "the wider pull wins");
+    eq(Model.aspectLockedPoint(fixed, taken, { x: 110, y: 150 }), { x: 300, y: 150 }, "or the taller");
+    eq(Model.aspectLockedPoint(fixed, taken, { x: -200, y: 60 }), { x: -200, y: 100 }, "pulled through the fixed corner");
+    eq(Model.aspectLockedPoint(fixed, { x: 100, y: 0 }, { x: 7, y: 9 }), { x: 7, y: 9 }, "a flat mark has no proportions");
+    eq(Model.oppositeCorner({ x: 10, y: 20, w: 100, h: 50 }, "br"), { x: 10, y: 20 });
+    eq(Model.oppositeCorner({ x: 10, y: 20, w: 100, h: 50 }, "tl"), { x: 110, y: 70 });
+    eq(Model.oppositeCorner({ x: 110, y: 70, w: -100, h: -50 }, "tr"), { x: 10, y: 70 }, "drawn backwards, as seen");
+});
+
+test("copies land beside the originals, inside the picture", () => {
+    const area = { x: 0, y: 0, w: 400, h: 300 };
+    eq(Model.copyOffset([{ x: 10, y: 10, w: 50, h: 50 }], 20, area), { dx: 20, dy: 20 }, "room: down and right");
+    eq(Model.copyOffset([{ x: 340, y: 10, w: 50, h: 50 }], 20, area), { dx: -20, dy: 20 }, "at the right edge: left instead");
+    eq(Model.copyOffset([{ x: 340, y: 240, w: 50, h: 50 }], 20, area), { dx: -20, dy: -20 }, "in the corner: up and left");
+    eq(Model.copyOffset([{ x: 345, y: 10, w: 50, h: 50 }], 20, area).dx, -20, "even a little room is less than the step");
+    eq(Model.copyOffset([{ x: 0, y: 0, w: 500, h: 50 }], 20, area).dx, 20, "a mark wider than the picture goes where it likes");
+});
+
+test("a label sits on an outline, a pill or nothing, and may wrap", () => {
+    eq(Model.textStyle({ textStyle: "pill" }), "pill");
+    eq(Model.textStyle({ textStyle: "" }), "outline", "rows from before it");
+    eq(Model.textStyle({ textStyle: "glow" }), "outline");
+    eq(Model.newAnnotation("text", 0, 0).textStyle, "");
+    ok("textStyle" in Model.SETTABLE);
+    // A wrapping label has a right-side handle for its width; a line has not.
+    const line = { kind: "text", x: 5, y: 5, w: 0, h: 0, fontSize: 20 };
+    const wrap = { kind: "text", x: 5, y: 5, w: 120, h: 0, fontSize: 20 };
+    eq(Model.resizeHandles(line, 100, 40).map(h => h.key), ["tl", "tr", "br", "bl"]);
+    eq(Model.resizeHandles(wrap, 120, 60).map(h => h.key), ["tl", "tr", "br", "bl", "r"]);
+    eq(Model.sideHandles(line), []); eq(Model.sideHandles(wrap), ["r"]);
+    eq(Model.sideHandles({ kind: "box" }), ["t", "r", "b", "l"]);
+    eq(Model.resizeAnnotation(wrap, "r", 205, 30, 120, 60), { w: 200 }, "the side sets the wrap width");
+    eq(Model.resizeAnnotation(wrap, "r", 6, 30, 120, 60), { w: Model.MIN_TEXT_WRAP }, "never narrower than a word");
+    const bigger = Model.resizeAnnotation(wrap, "br", 245, 125, 120, 60);
+    eq(bigger.fontSize, 40); eq(bigger.w, 240, "the width scales with the text");
+    ok(!("w" in Model.resizeAnnotation(line, "br", 205, 85, 100, 40)), "a line has no width to scale");
+});
+
+test("a recent card is written whole and read back clean", () => {
+    const doc = Object.assign({}, Model.DEFAULT_STYLE, {
+        kind: "shot", shotName: "a.png", frameTitle: "A", codeText: "", codeLang: "auto",
+        layoutDir: "column", slotGap: 6, matchSizes: false, slotAlign: "end",
+        autoPalette: ["#112233"], shotPalette: ["#445566"], shotEdge: "#778899",
+        activePreset: "default", textSize: 24, padding: 12,
+        snapshot: () => JSON.stringify([Object.assign(Model.newAnnotation("box", 1, 2), { w: 30, h: 40 })])
+    });
+    const slots = [Model.newSlot("/state/r1/0-a.png", 800, 600)];
+    const d = Model.recentDocument(doc, "r1", slots);
+    eq(d.id, "r1"); eq(d.kind, "shot"); eq(d.title, "0-a.png");
+    eq(d.layout, { dir: "column", gap: 6, match: false, align: "end" });
+    eq(d.style.padding, 12); eq(d.marks.length, 1); eq(d.palette.edge, "#778899");
+    ok(d.stamp > 0);
+
+    const back = Model.cleanRecent(JSON.parse(JSON.stringify(d)));
+    eq(back.slots[0].source, "/state/r1/0-a.png"); eq(back.slots[0].w, 800);
+    eq(back.marks[0].kind, "box"); eq(back.marks[0].w, 30);
+    eq(back.marks[0].corner, -1, "a role the row lacked gets its default");
+    eq(back.layout.dir, "column"); eq(back.textSize, 24);
+    eq(Model.cleanRecent({ id: "x", kind: "shot", slots: [] }), null, "a shot card with no shots is nothing");
+    eq(Model.cleanRecent({ id: "x", kind: "code", codeText: "" }), null, "nor a code card with no code");
+    eq(Model.cleanRecent({ id: "c", kind: "code", codeText: "fn main() {}" }).codeLang, "auto");
+    eq(Model.cleanRecent({ id: "x", kind: "shot", slots: [{ source: "/p", w: 10, h: 10 }],
+                           marks: [{ kind: "nope" }, { kind: "arrow", x: 1, y: 2, w: 3, h: 4 }] }).marks.length, 1,
+       "an unknown kind is dropped");
+    eq(Model.cleanRecent({ id: "x", kind: "shot", slots: [{ source: "/p", w: 10, h: 10, crop: { x: 0, y: 0, w: 4, h: 4 } }] })
+       .slots[0].crop, null, "a crop too small to be one is dropped");
+    eq(Model.recentSourceName(2, "/tmp/x/shot.png"), "2-shot.png");
+    const list = [{ id: "a" }, { id: "b" }];
+    eq(Model.findRecent(list, "b").id, "b"); eq(Model.findRecent(list, "2").id, "b", "by place, 1 is the newest");
+    eq(Model.findRecent(list, "3"), null); eq(Model.findRecent(list, ""), null);
+    eq(Model.RECENT_KEPT, 5);
+    ok("recent" in Model.CONFIG_FILES, "versioned like the other files");
 });
 
 test("the README's Keys table is the keys the About panel lists", () => {

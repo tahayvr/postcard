@@ -41,6 +41,14 @@ Loader {
                                          ? opts.picked.style : doc.arrowStyle
     readonly property string textFont: (opts.picked && opts.picked.kind === "text" && opts.picked.font)
                                        ? opts.picked.font : doc.textFont
+    readonly property string textStyle: (opts.picked && opts.picked.kind === "text")
+                                        ? Model.textStyle(opts.picked) : doc.textStyle
+    readonly property string redactStyle: (opts.picked && opts.picked.kind === "redact")
+                                          ? Model.redactStyle(opts.picked) : doc.redactStyle
+    readonly property bool shapeFill: (opts.picked && (opts.picked.kind === "box" || opts.picked.kind === "ellipse"))
+                                      ? !!opts.picked.fill : doc.shapeFill
+    readonly property real shapeCorner: (opts.picked && opts.picked.kind === "box")
+                                        ? Model.boxRadius(opts.picked, opts.picked.width) : doc.shapeCorner
 
     // Both at once: what is in hand changes, and so does what the next mark
     // will be made with.
@@ -195,6 +203,57 @@ Loader {
                         onClicked: opts.doc.setTextFont(modelData.key)
                     }
                 }
+            }
+
+            // What a label sits on: outlined glyphs, a cream pill, or nothing.
+            Row {
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Ui.gap
+                visible: opts.subject === "text"
+                Repeater {
+                    model: Model.TEXT_STYLES
+                    IconButton {
+                        required property var modelData
+                        label: modelData.label
+                        tip: modelData.key === "pill" ? "On a cream pill, readable on any picture"
+                           : modelData.key === "plain" ? "Bare glyphs" : "Outlined glyphs"
+                        active: opts.textStyle === modelData.key
+                        onClicked: opts.doc.setTextStyle(modelData.key)
+                    }
+                }
+            }
+
+            // A box or an ellipse can be filled in; only a box has corners.
+            Row {
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Ui.gap
+                visible: opts.subject === "box" || opts.subject === "ellipse"
+                IconButton {
+                    glyph: opts.subject === "ellipse" ? "\u{F0765}" : "\u{F0764}"
+                    tip: opts.shapeFill ? "Filled in, click for an outline" : "Fill it in"
+                    active: opts.shapeFill
+                    onClicked: opts.doc.setShapeFill(!opts.shapeFill)
+                }
+                InlineSlider {
+                    visible: opts.subject === "box"
+                    label: "Corner"
+                    value: opts.shapeCorner
+                    from: 0; to: Model.MAX_CORNER
+                    trackWidth: Style.space(70)
+                    onMoved: function (v) { opts.doc.setShapeCorner(Math.round(v)); }
+                }
+            }
+
+            // A highlight takes the height of the text line it is drawn over,
+            // read off the picture once it is let go.
+            IconButton {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: opts.subject === "highlight" && opts.doc.kind === "shot"
+                glyph: "\u{F0284}"
+                tip: opts.doc.highlightSnap ? "Snapping to the line of text under it, click to draw freely"
+                                            : "Snap to the line of text under it"
+                active: opts.doc.highlightSnap
+                onClicked: opts.doc.highlightSnap = !opts.doc.highlightSnap
             }
 
             // Only arrows have more than one shape to draw.
@@ -407,12 +466,31 @@ Loader {
         Row {
             spacing: Ui.gap
 
+            // Blocks or a flat fill, for the next hidden area and the one in
+            // hand.
+            Row {
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Ui.gap
+                Repeater {
+                    model: Model.REDACT_STYLES
+                    IconButton {
+                        required property var modelData
+                        label: modelData.label
+                        tip: modelData.key === "solid" ? "A flat block that leaks nothing, not even a word's shape"
+                                                       : "One color per block"
+                        active: opts.redactStyle === modelData.key
+                        onClicked: opts.doc.setRedactStyle(modelData.key)
+                    }
+                }
+            }
+            Rectangle { width: 1; height: Ui.button; color: Ui.hairline; anchors.verticalCenter: parent.verticalCenter }
+
             // OCR has no text to find on a code card, so there only the
             // manual blocks are on offer.
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 visible: opts.doc.kind !== "shot"
-                text: "Drag over anything to pixelate it"
+                text: "Drag over anything to hide it"
                 color: Ui.textMuted
                 font.family: Style.font.family
                 font.pixelSize: Style.font.bodySmall

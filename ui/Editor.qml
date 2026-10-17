@@ -12,6 +12,10 @@ Rectangle {
     property bool hasLastRegion: false
     property string statusText: ""
     property bool busy: false
+    // The last few cards, newest first, offered by the empty state.
+    property var recents: []
+    signal recentRequested(string id)
+    signal forgetRecentRequested(string id)
 
     signal captureRequested(string mode)
     signal codeRequested()
@@ -29,18 +33,35 @@ Rectangle {
     signal eyedropRequested(var done)
     signal cropRequested()
     signal uncropRequested()
+    // A highlight was just drawn: the overlay reads the picture for the line
+    // of text under its middle and, finding one, gives it that line's height.
+    signal snapRequested(string uid, real x, real y)
+
+    // Whether a pointer event's modifiers can be believed. A binding with a
+    // modifier in it, like the README's SUPER+SHIFT+PRINT, leaves that
+    // modifier reported held once the overlay takes focus, because its
+    // release went to the compositor: the first box after a hotkey capture
+    // came out square. Trusted from the first key event the overlay sees.
+    property bool modifiersTrusted: false
+
+    function shiftHeld(mods) { return editor.modifiersTrusted && (mods & Qt.ShiftModifier) !== 0; }
+    function altHeld(mods) { return editor.modifiersTrusted && (mods & Qt.AltModifier) !== 0; }
 
     // The drawing surface hovers as well as drags, so `held` says whether the
     // button is actually down. Every tool but crop had an annotation started
     // on press to check instead; crop had nothing, and its selection followed
     // the bare pointer around the picture. Callable, so the harness can hold
-    // that behaviour down without a mouse.
-    function drawMove(px, py, held) {
+    // that behaviour down without a mouse; `mods` are the pointer's modifiers,
+    // already trusted.
+    function drawMove(px, py, held, mods) {
         if (!held) return;
+        mods = mods || 0;
+        var shift = (mods & Qt.ShiftModifier) !== 0, alt = (mods & Qt.AltModifier) !== 0;
 
         if (doc.tool === "crop") {
-            var r = Model.cropRect(draw.ox, draw.oy, px - draw.ox, py - draw.oy,
-                                   doc.shotWidth, doc.shotHeight);
+            var cw = px - draw.ox, ch = py - draw.oy;
+            if (shift) { var cc = Model.constrainDrag("box", cw, ch); cw = cc.w; ch = cc.h; }
+            var r = Model.cropRect(draw.ox, draw.oy, cw, ch, doc.shotWidth, doc.shotHeight);
             doc.cropRect = Qt.rect(r.x, r.y, r.w, r.h);
             return;
         }
@@ -48,11 +69,34 @@ Rectangle {
         if (draw.activeId === "") return;
         var i = doc.indexOfId(draw.activeId);
         if (i < 0) return;
+        var kind = doc.annotations.get(i).kind;
+        // A label dragged out takes a width to wrap at, nothing more.
+        if (kind === "text") {
+            doc.annotations.setProperty(i, "w", Math.max(0, px - draw.ox));
+            return;
+        }
         // A mark is drawn inside the picture, whatever the pointer does.
         var q = Model.clampToArea(px, py, doc.pictureArea);
-        px = q.x; py = q.y;
-        doc.annotations.setProperty(i, "w", px - draw.ox);
-        doc.annotations.setProperty(i, "h", py - draw.oy);
+        var w = q.x - draw.ox, h = q.y - draw.oy;
+        // Shift squares it up, or holds an arrow to 45 degrees; squared again
+        // after the clamp, which only ever shrinks it, so it stays inside.
+        if (shift) {
+            var c = Model.constrainDrag(kind, w, h);
+            var cq = Model.clampToArea(draw.ox + c.w, draw.oy + c.h, doc.pictureArea);
+            c = Model.constrainDrag(kind, cq.x - draw.ox, cq.y - draw.oy);
+            w = c.w; h = c.h;
+        }
+        if (alt && Model.drawsFromCentre(kind)) {
+            var m = Model.centredDrag(draw.ox, draw.oy, w, h, doc.pictureArea);
+            doc.annotations.setProperty(i, "x", m.x);
+            doc.annotations.setProperty(i, "y", m.y);
+            w = m.w; h = m.h;
+        } else {
+            doc.annotations.setProperty(i, "x", draw.ox);
+            doc.annotations.setProperty(i, "y", draw.oy);
+        }
+        doc.annotations.setProperty(i, "w", w);
+        doc.annotations.setProperty(i, "h", h);
         if (doc.tool === "arrow") {
             var a = doc.annotations.get(i);
             doc.annotations.setProperty(i, "bend", Model.bendInside(a, doc.pictureArea));
@@ -61,6 +105,96 @@ Rectangle {
         // model on its own. The dim is one layer over the picture, so it only
         // redraws when the document says something changed.
         if (doc.tool === "spotlight") doc.annotationsEdited();
+    }
+
+    // Modifiers as the drawing surface should read them.
+    function drawMods(mods) {
+        return (editor.shiftHeld(mods) ? Qt.ShiftModifier : 0) | (editor.altHeld(mods) ? Qt.AltModifier : 0);
+    }
+
+    // The start of a drag, in shot pixels, apart from the mouse so the
+    // harness can call it: a crop starts a selection, a step and a label are
+    // placed at once, anything else starts a mark that drawMove sizes.
+    // Returns the uid of the mark in hand, or "" when nothing follows.
+    function beginDraw(px, py) {
+        var p = Qt.point(px, py);
+        // Pressed in the space around the picture, a mark still starts
+        // inside it; a crop is about the shot alone.
+        if (doc.tool !== "crop") {
+            var q = Model.clampToArea(p.x, p.y, doc.pictureArea);
+            p = Qt.point(q.x, q.y);
+        }
+        draw.ox = p.x; draw.oy = p.y;
+
+        if (doc.tool === "crop") {
+            doc.selectedId = "";
+            doc.cropRect = Qt.rect(0, 0, 0, 0);
+            draw.activeId = "";
+            return "";
+        }
+
+        var a = Model.newAnnotation(doc.tool, p.x, p.y);
+        a.color = String(doc.inkColor);
+        a.width = doc.inkWidth;
+        if (doc.tool === "arrow") a.style = String(doc.arrowStyle);
+        if (doc.tool === "redact") a.style = String(doc.redactStyle);
+        if (doc.tool === "box" || doc.tool === "ellipse") a.fill = doc.shapeFill;
+        if (doc.tool === "box") a.corner = doc.shapeCorner;
+
+        if (doc.tool === "step") {
+            var size = Math.max(22, Math.round(doc.inkWidth * 9));
+            doc.stepCounter += 1;
+            a.index = doc.stepCounter;
+            a.x = p.x - size / 2; a.y = p.y - size / 2;
+            a.w = size; a.h = size;
+            // Placed whole in one click, so all of it goes inside.
+            var back = Model.keepInside({ x: a.x, y: a.y, w: size, h: size }, doc.pictureArea);
+            a.x += back.dx; a.y += back.dy;
+            doc.addAnnotation(a);
+            draw.activeId = "";
+            return "";
+        }
+        if (doc.tool === "text") {
+            // Placed on press; a drag from here gives it a width to wrap
+            // at, and the release settles which it was.
+            a.w = 0; a.h = 0;
+            a.text = "";
+            a.font = doc.textFont;
+            a.textStyle = doc.textStyle;
+            a.fontSize = doc.textSize > 0 ? doc.textSize
+                       : Model.defaultTextSize(doc.shotWidth, doc.shotHeight);
+            doc.addAnnotation(a);
+            draw.activeId = a.uid;
+            return a.uid;
+        }
+        a.strength = Math.max(6, Math.round(doc.geo.shotW / 90));
+        doc.addAnnotation(a);
+        draw.activeId = a.uid;
+        return a.uid;
+    }
+
+    // The end of a drag, apart from the mouse so the harness can call it: a
+    // stray click leaves nothing, a label settles into a line or a wrapping
+    // box, and a highlight asks for the text row under it.
+    function finishDraw(uid) {
+        var i = doc.indexOfId(uid);
+        if (i < 0) return;
+        var a = doc.annotations.get(i);
+        if (a.kind === "text") {
+            // Narrower than a word's worth and it was a click.
+            if (a.w < Model.MIN_TEXT_WRAP) doc.annotations.setProperty(i, "w", 0);
+            doc.annotationsEdited();
+            doc.tool = "select";
+            editor.statusText = "Type the label, then press Enter";
+            return;
+        }
+        if (Math.abs(a.w) < 4 && Math.abs(a.h) < 4) {
+            doc.removeAnnotation(uid);
+            return;
+        }
+        doc.annotationsEdited();
+        if (a.kind === "highlight" && doc.highlightSnap && doc.kind === "shot")
+            editor.snapRequested(uid, a.x + a.w / 2, a.y + a.h / 2);
     }
 
     readonly property Item exportTarget: grabRoot
@@ -325,6 +459,7 @@ Rectangle {
                     doc: editor.doc
                     interactive: true
                     viewScale: viewport.fit
+                    modifiersTrusted: editor.modifiersTrusted
                 }
             }
 
@@ -350,59 +485,12 @@ Rectangle {
                 onPressed: function (e) {
                     if (doc.tool === "select") { doc.selectedId = ""; return; }
                     var p = toShot(e.x, e.y);
-                    // Pressed in the space around the picture, a mark still
-                    // starts inside it; a crop is about the shot alone.
-                    if (doc.tool !== "crop") {
-                        var q = Model.clampToArea(p.x, p.y, doc.pictureArea);
-                        p = Qt.point(q.x, q.y);
-                    }
-                    ox = p.x; oy = p.y;
-
-                    if (doc.tool === "crop") {
-                        doc.selectedId = "";
-                        doc.cropRect = Qt.rect(0, 0, 0, 0);
-                        activeId = "";
-                        return;
-                    }
-
-                    var a = Model.newAnnotation(doc.tool, p.x, p.y);
-                    a.color = String(doc.inkColor);
-                    a.width = doc.inkWidth;
-                    if (doc.tool === "arrow") a.style = String(doc.arrowStyle);
-
-                    if (doc.tool === "step") {
-                        var size = Math.max(22, Math.round(doc.inkWidth * 9));
-                        doc.stepCounter += 1;
-                        a.index = doc.stepCounter;
-                        a.x = p.x - size / 2; a.y = p.y - size / 2;
-                        a.w = size; a.h = size;
-                        // Placed whole in one click, so all of it goes inside.
-                        var back = Model.keepInside({ x: a.x, y: a.y, w: size, h: size }, doc.pictureArea);
-                        a.x += back.dx; a.y += back.dy;
-                        doc.addAnnotation(a);
-                        activeId = "";
-                        return;
-                    }
-                    if (doc.tool === "text") {
-                        a.w = 0; a.h = 0;
-                        a.text = "";
-                        a.font = doc.textFont;
-                        a.fontSize = doc.textSize > 0 ? doc.textSize
-                                   : Model.defaultTextSize(doc.shotWidth, doc.shotHeight);
-                        doc.addAnnotation(a);
-                        activeId = "";
-                        doc.tool = "select";
-                        editor.statusText = "Type the label, then press Enter";
-                        return;
-                    }
-                    a.strength = Math.max(6, Math.round(doc.geo.shotW / 90));
-                    doc.addAnnotation(a);
-                    activeId = a.uid;
+                    editor.beginDraw(p.x, p.y);
                 }
 
                 onPositionChanged: function (e) {
                     var p = toShot(e.x, e.y);
-                    editor.drawMove(p.x, p.y, draw.pressed);
+                    editor.drawMove(p.x, p.y, draw.pressed, editor.drawMods(e.modifiers));
                 }
 
                 onReleased: function () {
@@ -411,14 +499,7 @@ Rectangle {
                         return;
                     }
                     if (activeId === "") return;
-                    var i = doc.indexOfId(activeId);
-                    if (i >= 0) {
-                        var a = doc.annotations.get(i);
-                        if (Math.abs(a.w) < 4 && Math.abs(a.h) < 4)
-                            doc.removeAnnotation(activeId);
-                        else
-                            doc.annotationsEdited();
-                    }
+                    editor.finishDraw(activeId);
                     activeId = "";
                 }
             }
@@ -458,6 +539,82 @@ Rectangle {
                 IconButton { glyph: "\u{F0489}"; label: "Capture a region"; onClicked: editor.captureRequested("region") }
                 IconButton { glyph: "\uf121"; label: "Code from selection"; onClicked: editor.codeRequested() }
                 IconButton { glyph: "\uf1c5"; label: "Open a file"; onClicked: editor.openRequested() }
+            }
+
+            // The last few cards, each as it was last seen, to pick up again.
+            Column {
+                width: parent.width
+                spacing: Ui.row
+                visible: editor.recents.length > 0
+
+                Text {
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                    text: "Recent"
+                    color: Ui.textMuted
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.caption
+                    font.capitalization: Font.AllUppercase
+                    font.letterSpacing: 1
+                }
+
+                Row {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: Ui.gap
+                    Repeater {
+                        model: editor.recents
+                        Rectangle {
+                            id: card
+                            required property var modelData
+                            width: Style.space(64)
+                            height: Style.space(48)
+                            color: Ui.fill
+                            border.width: 1
+                            border.color: cardHover.hovered ? Ui.borderActive : Ui.hairline
+
+                            Image {
+                                anchors.fill: parent
+                                anchors.margins: 1
+                                visible: card.modelData.thumb !== ""
+                                source: card.modelData.thumb !== "" ? "file://" + card.modelData.thumb : ""
+                                sourceSize.width: Style.space(128)
+                                fillMode: Image.PreserveAspectCrop
+                                asynchronous: true
+                                cache: false
+                            }
+                            // A code card recorded before it was ever exported
+                            // has no picture yet.
+                            Text {
+                                anchors.centerIn: parent
+                                visible: card.modelData.thumb === ""
+                                text: card.modelData.kind === "code" ? "\uf121" : "\uf03e"
+                                color: Ui.textMuted
+                                font.family: Style.font.family
+                                font.pixelSize: Style.font.icon
+                            }
+
+                            HoverHandler {
+                                id: cardHover
+                                cursorShape: Qt.PointingHandCursor
+                            }
+                            TapHandler {
+                                acceptedButtons: Qt.LeftButton
+                                onTapped: editor.recentRequested(card.modelData.id)
+                            }
+                            TapHandler {
+                                acceptedButtons: Qt.MiddleButton
+                                onTapped: editor.forgetRecentRequested(card.modelData.id)
+                            }
+                            Tooltip {
+                                target: card
+                                text: card.modelData.title + (card.modelData.marks.length
+                                      ? "  \u00b7  " + Model.plural(card.modelData.marks.length, "mark") : "")
+                                      + "  \u00b7  click to reopen, middle-click to forget"
+                                show: cardHover.hovered
+                            }
+                        }
+                    }
+                }
             }
         }
     }

@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# postcard-rows <image> <x> <y>
+# The line of text under a point, as "top bottom" (bottom exclusive) in the
+# image's own pixels, or nothing when there is no text-like row within reach.
+# A highlight drawn over text takes this height, so it sits on the line
+# rather than roughly across it.
+#
+# The same rule Omasnap's highlighter uses, read through ImageMagick: in a
+# window about the point, a row is "text" when enough of its pixels differ
+# sharply from the one two pixels to their right (glyph edges, whatever the
+# colors), rows merge across the small gaps inside letters, and the band is
+# kept when it is the height of a line of text and no more.
+set -uo pipefail
+exec </dev/null
+
+img="${1:-}"; x="${2:-}"; y="${3:-}"
+[ -f "$img" ] && [[ "$x" =~ ^-?[0-9]+$ ]] && [[ "$y" =~ ^-?[0-9]+$ ]] || exit 0
+
+read -r iw ih < <(magick identify -format '%w %h\n' "$img[0]" 2>/dev/null) || exit 0
+[ "${iw:-0}" -gt 0 ] && [ "${ih:-0}" -gt 0 ] || exit 0
+(( x >= 0 && x < iw && y >= 0 && y < ih )) || exit 0
+
+half=96          # half the window's width
+snap=20          # how far a row is looked for, up and down
+maxh=64          # tallest band that is still a line of text
+minh=5           # shortest
+gap=6            # rows inside a letter that may stay quiet
+edge=2           # how far right the compared pixel sits
+
+x0=$(( x - half )); (( x0 < 0 )) && x0=0
+x1=$(( x + half )); (( x1 > iw - 1 - edge )) && x1=$(( iw - 1 - edge ))
+y0=$(( y - snap - maxh )); (( y0 < 0 )) && y0=0
+y1=$(( y + snap + maxh )); (( y1 > ih - 1 )) && y1=$(( ih - 1 ))
+w=$(( x1 - x0 + 1 )); h=$(( y1 - y0 + 1 ))
+(( w >= 16 && h >= minh )) || exit 0
+
+# Per row, the share of columns whose strongest channel steps by more than
+# the threshold two pixels on: the difference image, its channels folded to
+# their maximum, thresholded, and each row averaged to one gray.
+rows="$(magick "$img[0]" -crop "$((w + edge))x${h}+${x0}+${y0}" +repage \
+          \( +clone -roll "-${edge}+0" \) -compose Difference -composite \
+          -crop "${w}x${h}+0+0" +repage \
+          -separate -evaluate-sequence Max -threshold 5% \
+          -scale "1x${h}!" -depth 8 txt:- 2>/dev/null | tail -n +2)" || exit 0
+
+printf '%s\n' "$rows" | awk -v y="$(( y - y0 ))" -v y0="$y0" -v snap="$snap" -v maxh="$maxh" \
+                            -v minh="$minh" -v gap="$gap" -v w="$w" '
+  # "0,Y: (g,g,g) ..." — the gray is the fraction of edge pixels times 255;
+  # 3.5% of the columns (at least 3) make a text row.
+  { split($1, p, /[,:]/); r = p[2]
+    v = $2; gsub(/[()]/, "", v); split(v, c, ","); g = c[1] + 0
+    need = w * 0.035; if (need < 3) need = 3
+    text[r] = (g * w / 255 >= need) ? 1 : 0
+    if (r > last) last = r }
+  END {
+    anchor = -1
+    if (text[y]) anchor = y
+    else for (d = 1; d <= snap && anchor < 0; d++) {
+      if (y - d >= 0 && text[y - d]) anchor = y - d
+      else if (y + d <= last && text[y + d]) anchor = y + d
+    }
+    if (anchor < 0) exit 0
+    top = anchor; quiet = 0
+    while (top > 0) { if (text[top - 1]) { top--; quiet = 0 } else if (quiet < gap) { top--; quiet++ } else break }
+    while (top <= last && !text[top]) top++
+    bottom = anchor; quiet = 0
+    while (bottom < last) { if (text[bottom + 1]) { bottom++; quiet = 0 } else if (quiet < gap) { bottom++; quiet++ } else break }
+    while (bottom >= 0 && !text[bottom]) bottom--
+    height = bottom - top + 1
+    if (height < minh || height > maxh) exit 0
+    print (y0 + top) " " (y0 + bottom + 1)
+  }'
+exit 0

@@ -48,6 +48,12 @@ the picture that should not be public.
 **Annotation**
 
 - Arrows, boxes, ellipses, highlighter, text labels and numbered steps
+- Boxes and ellipses hollow or filled, with a corner radius of your choosing;
+  hold `Shift` for a square or a 45° arrow, `Alt` to draw from the middle out
+- Labels outlined, on a cream pill, or plain; several lines with
+  `Shift+Enter`, or drag a box with the text tool and they wrap inside it
+- A highlight snaps to the line of text under it, so it sits on the line
+  rather than roughly across it
 - Spotlight a rectangle, a rounded rectangle or an ellipse and the rest of the
   screenshot dims, leaving the background as it is; each spotlight can also
   magnify what is under it 2×, 3× or 4× in its own place, and a white ring
@@ -62,7 +68,8 @@ the picture that should not be public.
   numbers, IBANs, IP addresses and phone numbers, each category switchable
 - Card numbers are Luhn-checked; dates, versions, hashes and loopback
   addresses are left alone
-- Pixelation is destructive, not a blur that can be undone
+- Pixelation is destructive, not a blur that can be undone; or hide with a
+  solid block, which leaks nothing at all
 - Or copy the screenshot's text to the clipboard
 
 ![Hiding sensitive data](assets/showcase/redaction.png)
@@ -91,6 +98,13 @@ the picture that should not be public.
 - Optionally, every capture goes onto the clipboard as it is taken, for pasting
   without editing (Settings)
 - The preview is the file
+
+**Recent cards**
+
+- The last five cards are kept with their marks, so any of them can be
+  reopened from the empty editor as it was, after a shell restart or a plugin
+  reload too; a card is kept when it is saved, copied or closed
+- Kept in `~/.local/state/postcard/recent`, shots included
 
 ## Install
 
@@ -152,7 +166,10 @@ links to this guide, to report a problem, and to sponsor Postcard.
 | `Delete`                                         | Remove the selected annotations                                         |
 | `Shift`+click, or drag a box with the move tool  | Select several annotations; `Ctrl+A` selects them all                    |
 | Arrow keys, `Shift`+arrows                       | Move the selected annotations 1px, or 10px                              |
-| `Enter`                                          | Finish typing a text label                                              |
+| `Shift` while drawing                            | A square box, ellipse or spotlight; an arrow held to 45°; a corner handle keeps the shape |
+| `Alt` while drawing                              | Draw from the middle out                                                |
+| Drag with the text tool                          | A label that wraps at that width                                        |
+| `Enter`, `Shift+Enter`                           | Finish typing a text label, or start a new line in it                   |
 | `Esc`                                            | Deselect, then close                                                    |
 
 ### Scripting
@@ -193,13 +210,19 @@ omarchy-shell shell hide tahayvr.postcard                       # close, or canc
 
 # Styling
 omarchy-shell shell call tahayvr.postcard set '{"codeTheme":"nord","padding":8,"frame":"titlebar"}'
+omarchy-shell shell call tahayvr.postcard set '{"redactStyle":"solid","textStyle":"pill","shapeFill":true}'
 omarchy-shell shell call tahayvr.postcard preset social-post    # "Social Post": a dash for each space; or default
 
 # Marking up
-omarchy-shell shell call tahayvr.postcard annotate '{"kind":"box","x":40,"y":40,"w":300,"h":120}'
+omarchy-shell shell call tahayvr.postcard annotate '{"kind":"box","x":40,"y":40,"w":300,"h":120,"fill":true,"corner":12}'
+omarchy-shell shell call tahayvr.postcard annotate '{"kind":"text","x":40,"y":200,"w":300,"text":"Wraps\u0020here","textStyle":"pill"}'
 omarchy-shell shell call tahayvr.postcard crop '{"x":80,"y":40,"w":900,"h":600}'   # the shot under it; or '' for the selection
 omarchy-shell shell call tahayvr.postcard uncrop ''             # back to the whole picture
 omarchy-shell shell call tahayvr.postcard redact ''             # find and hide secrets
+
+# Recent cards
+omarchy-shell shell call tahayvr.postcard recent ''             # the last five, as JSON
+omarchy-shell shell call tahayvr.postcard recent 1              # reopen the newest (or an id)
 
 # Getting it out
 omarchy-shell shell call tahayvr.postcard save ''               # to the screenshot folder (and the clipboard)

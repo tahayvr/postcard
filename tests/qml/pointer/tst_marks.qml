@@ -87,6 +87,31 @@ Item {
             verify(row(u).x + doc.shownSizes[u].w <= 400.01);
         }
 
+        function test_a_wrapping_label_is_widened_by_its_right_side() {
+            var u = add({ kind: "text", x: 50, y: 50, w: 120, text: "A label that wraps", fontSize: 16, width: 3 });
+            doc.selectedId = u;
+            wait(30);
+            // The right side, half way down the label, pulled out by 60.
+            var h = doc.shownSizes[u].h;
+            // Taken 3px out from the side and held there, so the side lands
+            // 3px short of where the pointer stops.
+            drag(170 + 3, 50 + h / 2, 60, 0);
+            compare(row(u).w, 180);
+            compare(row(u).x, 50, "the label itself stays put");
+        }
+
+        function test_a_filled_box_is_taken_from_its_middle() {
+            var u = add({ kind: "box", x: 100, y: 100, w: 80, h: 60, width: 4, fill: true });
+            drag(140, 130, 20, 10);
+            // The drag threshold eats the first pixels, so near rather than exact.
+            verify(row(u).x >= 115 && row(u).x <= 120, "moved by about 20: " + row(u).x);
+            verify(row(u).y >= 105 && row(u).y <= 110, "moved by about 10: " + row(u).y);
+            // A hollow one is empty in the middle and is not.
+            var v = add({ kind: "box", x: 200, y: 100, w: 80, h: 60, width: 4 });
+            drag(240, 130, 20, 10);
+            compare(row(v).x, 200);
+        }
+
         function test_a_curve_flattens_to_fit() {
             var u = add({ kind: "arrow", x: 50, y: 60, w: 300, h: 0, style: "curved", bend: 0.3, width: 3 });
             doc.selectedId = u;

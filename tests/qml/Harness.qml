@@ -86,6 +86,24 @@ Window {
         empty.text = ""; empty.color = "#000000"; empty.width = 4;
         doc.annotations.append(empty);   // placeholder must not export
 
+        // A solid hidden area inside the stripe band: one flat dark block.
+        var solid = Model.newAnnotation("redact", 260, 60);
+        solid.w = 20; solid.h = 20; solid.style = "solid";
+        doc.annotations.append(solid);
+
+        // A filled box with rounded corners on the black half: yellow inside,
+        // and its very corner left black by the rounding.
+        var filled = Model.newAnnotation("box", 340, 120);
+        filled.w = 40; filled.h = 40; filled.color = "#ffff00"; filled.width = 4;
+        filled.fill = true; filled.corner = 20;
+        doc.annotations.append(filled);
+
+        // A label on a cream pill, on the black half.
+        var pill = Model.newAnnotation("text", 220, 160);
+        pill.text = "Pill"; pill.color = "#000000"; pill.width = 4; pill.textStyle = "pill";
+        pill.fontSize = 16;
+        doc.annotations.append(pill);
+
         // Editing chrome must not reach the file: the crop tool is in hand
         // with a selection over a corner of the shot, and every check below
         // still reads the bare picture.
