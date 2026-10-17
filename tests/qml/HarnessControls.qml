@@ -884,6 +884,24 @@ Window {
         win.check("a step is a quarter", Math.abs(stageItem.viewScale * 1.25 - 4) < 0.01, true);
         editor.zoomReset();
         win.check("0 fits it again", editor.zoom + " " + editor.scroll.x + "," + editor.scroll.y, "1 0,0");
+        // The footer's readout is a button back to the fit, only while zoomed.
+        function buttons(item, out) {
+            for (var i = 0; i < item.children.length; i++) {
+                var k = item.children[i];
+                if (k.hasOwnProperty("glyph") && k.hasOwnProperty("tip") && k.tip === "Back to fit (0)") out.push(k);
+                buttons(k, out);
+            }
+            return out;
+        }
+        var fit = buttons(editor, [])[0];
+        win.check("the footer carries a back-to-fit button", fit !== undefined, true);
+        win.check("hidden while the picture fits", fit ? fit.visible : true, false);
+        editor.statusText = "";          // a status message takes its place
+        editor.zoomAt(2, 100, 100);
+        win.check("shown while zoomed, with the zoom on it",
+                  fit ? fit.visible + " " + /^Zoom [0-9]+%$/.test(fit.label) : "", "true true");
+        if (fit) fit.clicked();
+        win.check("and a click fits the picture again", editor.zoom + " " + (fit ? fit.visible : ""), "1 false");
         doc.resetHistory();
         editor.zoomAt(2, 100, 100);
         doc.resetHistory();

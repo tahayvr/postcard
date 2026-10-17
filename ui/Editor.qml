@@ -773,22 +773,41 @@ Rectangle {
             color: Ui.hairline
         }
 
-        Text {
+        Row {
             anchors.left: parent.left
             anchors.leftMargin: Ui.pad
             anchors.verticalCenter: parent.verticalCenter
-            width: Math.min(implicitWidth, parent.width - Style.space(400))
-            elide: Text.ElideRight
-            text: editor.statusText !== "" ? editor.statusText
-                  : doc.outputTooLarge ? "Too large to render at " + doc.exportScale + "\u00d7 \u2014 pick a smaller export scale"
-                  : (doc.hasContent ? (viewport.zoom > 1 ? "Zoom " : "")
-                                   + Math.round(viewport.viewScale * 100) + "%  \u00b7  "
-                                   + doc.geo.frameW + "\u00d7" + doc.geo.frameH
-                                   + " \u2192 " + doc.outWidth + "\u00d7" + doc.outHeight
-                                 : "")
-            color: editor.statusText !== "" ? Ui.text : Ui.textMuted
-            font.family: Style.font.family
-            font.pixelSize: Style.font.caption
+            spacing: Ui.gap
+
+            // While zoomed the readout is the way back to the fit, where the
+            // picture is whole again.
+            IconButton {
+                id: fitButton
+                anchors.verticalCenter: parent.verticalCenter
+                glyph: "\uf010"
+                label: "Zoom " + Math.round(viewport.viewScale * 100) + "%"
+                tip: "Back to fit (0)"
+                flat: true
+                visible: doc.hasContent && viewport.zoom > 1
+                         && editor.statusText === "" && !doc.outputTooLarge
+                onClicked: viewport.zoomReset()
+            }
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                width: Math.min(implicitWidth, footer.width - Style.space(400))
+                elide: Text.ElideRight
+                text: editor.statusText !== "" ? editor.statusText
+                      : doc.outputTooLarge ? "Too large to render at " + doc.exportScale + "\u00d7 \u2014 pick a smaller export scale"
+                      : (doc.hasContent ? (fitButton.visible ? ""
+                                           : Math.round(viewport.viewScale * 100) + "%  \u00b7  ")
+                                       + doc.geo.frameW + "\u00d7" + doc.geo.frameH
+                                       + " \u2192 " + doc.outWidth + "\u00d7" + doc.outHeight
+                                     : "")
+                color: editor.statusText !== "" ? Ui.text : Ui.textMuted
+                font.family: Style.font.family
+                font.pixelSize: Style.font.caption
+            }
         }
 
         Row {
