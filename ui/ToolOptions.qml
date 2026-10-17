@@ -24,7 +24,7 @@ Loader {
     signal eyedropRequested(var done)
     signal addShotRequested(string how)
 
-    readonly property var inkTools: ["arrow", "box", "ellipse", "highlight", "text", "step", "magnify"]
+    readonly property var inkTools: ["arrow", "box", "ellipse", "highlight", "text", "step"]
 
     // The mark in hand, if one is selected: the strip is then about that
     // rather than about the tool, so a mark can be restyled after the fact.
@@ -41,8 +41,6 @@ Loader {
                                          ? opts.picked.style : doc.arrowStyle
     readonly property string textFont: (opts.picked && opts.picked.kind === "text" && opts.picked.font)
                                        ? opts.picked.font : doc.textFont
-    readonly property int zoom: opts.picked && opts.picked.kind === "magnify"
-                                ? opts.picked.zoom : doc.magnifyZoom
 
     // Both at once: what is in hand changes, and so does what the next mark
     // will be made with.
@@ -290,22 +288,6 @@ Loader {
                 }
             }
 
-            Row {
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: Ui.gap
-                visible: opts.subject === "magnify"
-                Repeater {
-                    model: Model.MAGNIFY_ZOOMS
-                    IconButton {
-                        required property var modelData
-                        label: modelData + "\u00d7"
-                        tip: "Zoom " + modelData + " times"
-                        active: opts.zoom === modelData
-                        onClicked: opts.doc.setMagnifyZoom(modelData)
-                    }
-                }
-            }
-
             InlineSlider {
                 // Neither a step badge nor a label has a stroke; both are
                 // sized by the handles on them.
@@ -333,11 +315,49 @@ Loader {
                     onClicked: opts.doc.spotShape = "rect"
                 }
                 IconButton {
+                    glyph: "\u{F14FC}"
+                    tip: "Rounded spotlight"
+                    active: opts.doc.spotShape === "rounded"
+                    onClicked: opts.doc.spotShape = "rounded"
+                }
+                IconButton {
                     glyph: "\u{F0766}"
                     tip: "Round spotlight"
                     active: opts.doc.spotShape === "ellipse"
                     onClicked: opts.doc.spotShape = "ellipse"
                 }
+            }
+
+            // Magnifying, each spotlight shows what is under its middle at
+            // that zoom, in its own place: there is no second lens to set.
+            Row {
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Ui.gap
+                IconButton {
+                    glyph: "\uf00e"
+                    tip: opts.doc.spotZoom > 1 ? "Magnifying what is under each spotlight, click to stop"
+                                               : "Magnify what is under each spotlight"
+                    active: opts.doc.spotZoom > 1
+                    onClicked: opts.doc.spotZoom = opts.doc.spotZoom > 1 ? 1 : Model.SPOT_ZOOMS[0]
+                }
+                Repeater {
+                    model: opts.doc.spotZoom > 1 ? Model.SPOT_ZOOMS : []
+                    IconButton {
+                        required property var modelData
+                        label: modelData + "\u00d7"
+                        tip: "Zoom " + modelData + " times"
+                        active: opts.doc.spotZoom === modelData
+                        onClicked: opts.doc.spotZoom = modelData
+                    }
+                }
+            }
+
+            IconButton {
+                anchors.verticalCenter: parent.verticalCenter
+                glyph: "\u{F00CE}"
+                tip: opts.doc.spotRing ? "Ring around each spotlight, click to remove" : "Add a ring around each spotlight"
+                active: opts.doc.spotRing
+                onClicked: opts.doc.spotRing = !opts.doc.spotRing
             }
 
             InlineSlider {

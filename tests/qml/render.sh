@@ -26,7 +26,7 @@ if grep -q '"QtQuick/Color 6.12"' /usr/lib/qt6/qml/QtQuick/plugins.qmltypes 2>/d
 fi
 here="$tree/tests/qml"
 rm -f "$out/export.png" "$out/export-inset.png" "$out/export-gradient.png" "$out/export-mesh.png" \
-      "$out/export-odd.png" "$out/export-spot.png" "$out/export-spot-oval.png" "$out/export-magnify.png" \
+      "$out/export-odd.png" "$out/export-spot.png" "$out/export-spot-oval.png" "$out/export-spot-ring.png" "$out/export-magnify.png" \
       "$out/export-two.png"
 
 # Synthetic screenshot: white left half, black right half, and a band of
@@ -153,7 +153,7 @@ echo "$slog" | grep -q "^qml: ok   one of them being the tip" \
 
 # ---- marks under a pointer -------------------------------------------------
 # Presses and drags through Qt's own test events: moves and resizes held to
-# the picture, and a magnifier's area taken before the handle over it.
+# the picture.
 plog="$(cd "$here" && QT_FORCE_STDERR_LOGGING=1 QT_QPA_PLATFORM=offscreen timeout 60 /usr/lib/qt6/bin/qmltestrunner -import "$here/stubs" -input pointer 2>&1)"
 echo "$plog" | grep -E "^(PASS|FAIL!)" | grep -v "TestCase()" | sed -E 's/^PASS +: qmltestrunner::/ok   /; s/^FAIL! +: qmltestrunner::/FAIL /'
 echo "$plog" | grep -qE "^Totals: [0-9]+ passed, 0 failed" \
@@ -206,8 +206,9 @@ fi
 # One spotlight over shot (10,10)-(90,190) at 60%, on the same 480x280 frame as
 # the first export: inside stays the shot, outside is the shot at 40% of its
 # brightness, and the background around the card must not move at all.
+# spot-ring is the same box rounded, with a 2px white ring along its edge.
 if [ $gpu = 1 ]; then
-  for f in spot spot-oval; do
+  for f in spot spot-oval spot-ring; do
     [ -f "$out/export-$f.png" ] || { echo "FAIL $f export missing"; fail=1; continue; }
     spx() { magick "$out/export-$f.png" -format "%[fx:int(255*p{$1,$2}.r+0.5)] %[fx:int(255*p{$1,$2}.g+0.5)] %[fx:int(255*p{$1,$2}.b+0.5)]" info:; }
     sexpect() { local got; got="$(spx "$2" "$3")"; local tol=6
@@ -224,38 +225,51 @@ if [ $gpu = 1 ]; then
     sexpect "$f dims the black half outside"    390  60     0   0   0
     if [ "$f" = "spot" ]; then
       sexpect "$f keeps the corner of the hole"  54  54   255 255 255
-    else
+    elif [ "$f" = "spot-oval" ]; then
       # An ellipse inscribed in the same box: bright in the middle, and that
       # same corner now falls outside it.
       sexpect "$f dims the corner of the box"    54  54   102 102 102
+    else
+      # Corners of 16px (a fifth of 80): the box's very corner is cut off,
+      # clear of the ring along the arc.
+      sexpect "$f dims the corner of the box"    51  51   102 102 102
+      # The stroke's edge is anti-aliased; dimmed, this pixel would be 102.
+      read -r r _ _ <<<"$(spx 49 140)"
+      (( r > 230 )) && echo "ok   $f draws the ring outside the edge ($r)" \
+        || { echo "FAIL $f has no ring outside the edge at 49,140: got $r"; fail=1; }
+      sexpect "$f leaves the dim past the ring"  46 140   102 102 102
     fi
     sexpect "$f keeps the middle of the hole"    90 140   255 255 255
   done
 fi
 
-# ---- magnifier -------------------------------------------------------------
-# Two 2x lenses 40px across on the same 480x280 frame, shot pixel (sx,sy) at
-# (sx+40, sy+40). One shows shot (110..130, 90..110) of the stripes, which are
-# 2px each, so the lens draws them as 4px bands; the band from 70 to 73 is
-# red and the next is blue, and the two pixels either side of that edge must
-# be pure. A lens that smoothed its pixels would blend them. The other shows
-# the middle of a hidden block, so it must be one flat color.
+# ---- magnifying spotlight -------------------------------------------------
+# Two 40px spotlights at 4x on the same 480x280 frame, shot pixel (sx,sy) at
+# (sx+40, sy+40). One sits at shot (100..140, 80..120) and shows the 10px
+# around its middle, shot (115..125, 95..105), of the stripes, which are 2px
+# each, so it draws them as 8px bands; shot 117 is red and 118 blue, which
+# land at 151 and 152. The two pixels either side of that edge must be pure;
+# one that smoothed its pixels would blend them. The other sits at shot
+# (255..295, 70..110), centred just inside a hidden block, and shows shot
+# (270..280, 85..95) of it. Shot 277 and 279 land at 323 and 331, clear of
+# the hidden mark, on stripes of different colors: unless the block was
+# pixelated before magnifying, they differ.
 if [ $gpu = 1 ]; then
   if [ -f "$out/export-magnify.png" ]; then
     mpx() { magick "$out/export-magnify.png" -format "%[fx:int(255*p{$1,$2}.r+0.5)] %[fx:int(255*p{$1,$2}.g+0.5)] %[fx:int(255*p{$1,$2}.b+0.5)]" info:; }
-    read -r r1 g1 b1 <<<"$(mpx 73 211)"
-    read -r r2 g2 b2 <<<"$(mpx 74 211)"
+    read -r r1 g1 b1 <<<"$(mpx 151 140)"
+    read -r r2 g2 b2 <<<"$(mpx 152 140)"
     if (( r1 > 200 && b1 < 60 && b2 > 200 && r2 < 60 )); then
-      echo "ok   a lens shows each shot pixel as a crisp block"
+      echo "ok   a magnifying spotlight shows each shot pixel as a crisp block"
     else
-      echo "FAIL a lens smeared the stripes: got $r1 $g1 $b1 then $r2 $g2 $b2"; fail=1
+      echo "FAIL a magnifying spotlight smeared the stripes: got $r1 $g1 $b1 then $r2 $g2 $b2"; fail=1
     fi
-    read -r h1 _ k1 <<<"$(mpx 381 211)"
-    read -r h2 _ k2 <<<"$(mpx 383 211)"
+    read -r h1 _ k1 <<<"$(mpx 323 130)"
+    read -r h2 _ k2 <<<"$(mpx 331 130)"
     if (( h1 - h2 < 12 && h2 - h1 < 12 && k1 - k2 < 12 && k2 - k1 < 12 )); then
-      echo "ok   a lens over a hidden area shows the blocks, not what is under them"
+      echo "ok   a magnifying spotlight over a hidden area shows the blocks, not what is under them"
     else
-      echo "FAIL a lens showed a hidden area: got $h1 $k1 then $h2 $k2"; fail=1
+      echo "FAIL a magnifying spotlight showed a hidden area: got $h1 $k1 then $h2 $k2"; fail=1
     fi
   else
     echo "FAIL magnify export missing"; fail=1

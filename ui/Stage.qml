@@ -378,8 +378,9 @@ Item {
         CodeBlock { doc: stage.doc }
     }
 
-    // What a magnifier looks through: the shot with every hidden area already
-    // pixelated, so a lens over one shows the blocks and not what they cover.
+    // What a magnifying spotlight looks through: the shot with every hidden
+    // area already pixelated, so one over it shows the blocks and not what
+    // they cover.
     // Drawn 1:1 in shot pixels; the texture size is set, or it would follow
     // the screen's scale and resample.
     Item {
@@ -420,6 +421,7 @@ Item {
         bottomRadius: stage.cardRadiusPx
         outlines: stage.doc.shotCount > 1 && stage.doc.sheet
                   ? Model.spotlightOutlines(stage.doc.sheet, topRadius, bottomRadius) : null
+        lensSource: lensSource
         x: stage.geo.cardX * stage.unit
         y: (stage.geo.cardY + stage.geo.chromeH) * stage.unit
         width: Math.max(1, stage.geo.cardW)
@@ -432,7 +434,6 @@ Item {
     AnnotationLayer {
         doc: stage.doc
         pixelSource: stage.codeKind ? codeSource : pixelSource
-        magnifySource: lensSource
         interactive: stage.interactive && !stage.doc.exporting
         viewScale: stage.viewScale * stage.unit
         x: (stage.geo.cardX + stage.geo.inset) * stage.unit

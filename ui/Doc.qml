@@ -95,7 +95,6 @@ QtObject {
     property real inkWidth: 4
     property string arrowStyle: "straight"
     property string textFont: "mono"
-    property int magnifyZoom: Model.MAGNIFY_ZOOM
     property int stepCounter: 0
     // The size a label was last pulled to, so the next one matches; 0 until
     // then, and a size that suits one shot may not suit the next.
@@ -155,8 +154,10 @@ QtObject {
     property rect cropRect: Qt.rect(0, 0, 0, 0)   // the selection being drawn
     readonly property bool cropUsable: Model.cropUsable(cropRect)
 
-    property string spotShape: "rect"       // rect | ellipse, for every spotlight
+    property string spotShape: "rect"       // Model.SPOT_SHAPES, for every spotlight
     property real spotDim: 55               // how dark the rest of the picture goes
+    property bool spotRing: false           // a white ring around every spotlight
+    property int spotZoom: 1                // 1, or Model.SPOT_ZOOMS: what each one magnifies
     property int spotlightCount: 0
     // A ListModel emits nothing a binding can follow, so the dim layer and the
     // count above ride on this instead.
@@ -284,7 +285,6 @@ QtObject {
         return out;
     }
 
-    // Like a drag, a magnifier's lens moves and what it shows stays.
     function moveSelection(dx, dy, except) {
         if (dx === 0 && dy === 0) return;
         for (var i = 0; i < annotations.count; i++) {
@@ -360,27 +360,13 @@ QtObject {
         });
     }
 
-    // Like the arrow style, the zoom is for the next magnifier and the one
-    // in hand.
-    function setMagnifyZoom(z) {
-        magnifyZoom = Model.magnifyZoom(z);
-        selectedRows().forEach(function (a) {
-            if (a.kind === "magnify") updateAnnotation(a.uid, Model.magnifyRezoom(a, magnifyZoom));
-        });
-    }
-
-    // A crop moves the picture out from under everything drawn on it, a
-    // magnifier's area as well as its lens.
+    // A crop moves the picture out from under everything drawn on it.
     function shiftAnnotations(dx, dy) {
         if (dx === 0 && dy === 0) return;
         for (var i = 0; i < annotations.count; i++) {
             var a = annotations.get(i);
             annotations.setProperty(i, "x", a.x + dx);
             annotations.setProperty(i, "y", a.y + dy);
-            if (a.kind === "magnify") {
-                annotations.setProperty(i, "sx", a.sx + dx);
-                annotations.setProperty(i, "sy", a.sy + dy);
-            }
         }
         annotationsEdited();
     }
@@ -569,9 +555,8 @@ QtObject {
         applyStyle(Model.DEFAULT_STYLE);
         activePreset = Model.DEFAULT_PRESET;
         tool = "select";
-        spotShape = "rect"; spotDim = 55;
+        spotShape = "rect"; spotDim = 55; spotRing = false; spotZoom = 1;
         inkColor = "#ff5f56"; inkWidth = 4; arrowStyle = "straight"; textFont = "mono";
-        magnifyZoom = Model.MAGNIFY_ZOOM;
     }
 
     function applyStyle(style) {
