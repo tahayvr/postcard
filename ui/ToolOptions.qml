@@ -96,12 +96,11 @@ Loader {
         id: captureComp
         Row {
             spacing: Ui.gap
-            IconButton { glyph: "\u{F0489}"; label: "Region"; onClicked: opts.captureRequested("region") }
-            IconButton { glyph: "\uf2d0"; label: "Window"; onClicked: opts.captureRequested("windows") }
+            IconButton { glyph: "\u{F0489}"; tip: "Capture a region"; onClicked: opts.captureRequested("region") }
+            IconButton { glyph: "\uf2d0"; tip: "Capture a window"; onClicked: opts.captureRequested("windows") }
             IconButton {
                 visible: opts.hasLastRegion
                 glyph: "\uf1da"
-                label: "Last"
                 tip: "Capture the last region again"
                 onClicked: opts.captureRequested("last")
             }
@@ -111,7 +110,6 @@ Loader {
             Row {
                 IconButton {
                     glyph: "\u{F0379}"
-                    label: "Screen"
                     tip: CaptureDelay.seconds
                          ? "Capture the whole screen in " + CaptureDelay.seconds + " seconds"
                          : "Capture the whole screen"
@@ -120,14 +118,18 @@ Loader {
                 Rectangle { width: 1; height: Ui.button; color: Ui.hairline }
                 IconButton {
                     glyph: "\uf017"
-                    label: CaptureDelay.label(CaptureDelay.seconds)
+                    // The seconds stay on the button: they are a setting, and
+                    // easy to forget when only a tooltip says.
+                    label: CaptureDelay.seconds ? CaptureDelay.label(CaptureDelay.seconds) : ""
                     rest: Ui.fillRaised
                     active: CaptureDelay.seconds > 0
-                    tip: "Delay before the screen is captured, click to change"
+                    tip: CaptureDelay.seconds
+                         ? "Screen waits " + CaptureDelay.seconds + " seconds, click to change"
+                         : "Screen captures at once, click to add a delay"
                     onClicked: CaptureDelay.cycle()
                 }
             }
-            IconButton { glyph: "\uf121"; label: "Code"; tip: "Selected text as a code card"; onClicked: opts.codeRequested() }
+            IconButton { glyph: "\uf121"; tip: "Selected text as a code card"; onClicked: opts.codeRequested() }
 
             // Another shot beside the one on the card, rather than in its
             // place like the buttons before it.
@@ -135,7 +137,6 @@ Loader {
                 id: addShot
                 visible: opts.doc.hasContent && opts.doc.kind === "shot"
                 glyph: "\uf067"
-                label: "Add"
                 tip: "Put another shot beside this one"
                 active: addMenu.opened
                 onClicked: addMenu.opened ? addMenu.close() : addMenu.open()
@@ -170,7 +171,7 @@ Loader {
                     }
                 }
             }
-            IconButton { glyph: "\uf1c5"; label: "File"; tip: "Open a file"; onClicked: opts.openRequested() }
+            IconButton { glyph: "\uf1c5"; tip: "Open a file"; onClicked: opts.openRequested() }
         }
     }
 
@@ -324,13 +325,13 @@ Loader {
                 spacing: Ui.gap
                 IconButton {
                     glyph: "\u{F0763}"
-                    label: "Rectangle"
+                    tip: "Rectangular spotlight"
                     active: opts.doc.spotShape === "rect"
                     onClicked: opts.doc.spotShape = "rect"
                 }
                 IconButton {
                     glyph: "\u{F0766}"
-                    label: "Ellipse"
+                    tip: "Round spotlight"
                     active: opts.doc.spotShape === "ellipse"
                     onClicked: opts.doc.spotShape = "ellipse"
                 }
@@ -363,7 +364,6 @@ Loader {
 
             IconButton {
                 glyph: "\uf125"
-                label: "Crop"
                 primary: opts.doc.cropUsable
                 enabled: opts.doc.cropUsable
                 tip: "Keep the selection (Enter)"
@@ -373,7 +373,6 @@ Loader {
             IconButton {
                 visible: opts.doc.cropped
                 glyph: "\u{F0293}"
-                label: "Whole picture"
                 tip: "Back to the picture as it came in"
                 onClicked: opts.uncropRequested()
             }
@@ -415,8 +414,7 @@ Loader {
             IconButton {
                 visible: opts.doc.kind === "shot"
                 glyph: "\u{F00B5}"
-                label: "Find and hide"
-                tip: "Pixelate everything the classes above match"
+                tip: "Find and hide: pixelate everything the classes beside it match"
                 onClicked: opts.autoRedactRequested()
             }
         }
