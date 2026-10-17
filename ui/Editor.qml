@@ -9,6 +9,7 @@ Rectangle {
     property var doc
     property var systemThemes: []
     property string saveDir: ""
+    property bool hasLastRegion: false
     property string statusText: ""
     property bool busy: false
 
@@ -161,6 +162,7 @@ Rectangle {
         ToolOptions {
             anchors.centerIn: parent
             doc: editor.doc
+            hasLastRegion: editor.hasLastRegion
             onCaptureRequested: function (mode) { editor.captureRequested(mode); }
             onCodeRequested: editor.codeRequested()
             onOpenRequested: editor.openRequested()

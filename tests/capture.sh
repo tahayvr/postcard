@@ -74,10 +74,13 @@ next="$(capture fullscreen "0,0 1920x1080" ok)"
 # The last pick comes back without the picker; fullscreen is not a pick.
 memory="$XDG_RUNTIME_DIR/postcard-last-region"
 rm -f "$memory" "$TEST_LOG.freeze"
+[[ -z "$(bash "$root/bin/postcard-capture" --has-last)" ]] || fail "--has-last said yes with nothing kept"
 shot="$(TEST_PICKER=region capture last "1,2 30x40" ok)"
 [[ -f "$shot" && -e "$TEST_LOG.freeze" ]] || fail "last with nothing kept did not fall back to the region picker"
 capture smart "5,6 70x80" ok >/dev/null
 capture fullscreen "0,0 1920x1080" ok >/dev/null
+[[ "$(bash "$root/bin/postcard-capture" --has-last)" == yes ]] || fail "--has-last missed a kept region"
+[[ -z "$(TEST_WIDTH=2560 bash "$root/bin/postcard-capture" --has-last)" ]] || fail "--has-last took a region from another layout"
 rm -f "$TEST_LOG.freeze"
 shot="$(TEST_PICKER=none capture last "5,6 70x80" ok)"
 [[ -f "$shot" && ! -e "$TEST_LOG.freeze" ]] || fail "last did not take the kept region without the picker"

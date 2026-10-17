@@ -20,6 +20,8 @@ Item {
     property bool capturing: false
     property bool picking: false        // the system file dialog is up
     property bool eyedropping: false    // hyprpicker is up
+    // Whether Last has a region to take; it is offered only then.
+    property bool hasLastRegion: false
 
     readonly property string pluginId: manifest && manifest.id ? manifest.id : "tahayvr.postcard"
     readonly property string pluginDir: decodeURIComponent(
@@ -47,6 +49,13 @@ Item {
     Connections {
         target: Color
         function onBackgroundChanged() { themeProc.running = true; wallpaperProc.running = true; }
+    }
+    Process {
+        id: lastRegionProc
+        command: ["bash", root.pluginDir + "bin/postcard-capture", "--has-last"]
+        stdout: StdioCollector {
+            onStreamFinished: root.hasLastRegion = text.trim() === "yes"
+        }
     }
     Process {
         id: themeProc
@@ -108,6 +117,7 @@ Item {
         if (!payload || typeof payload !== "object") payload = {};
 
         opened = true;
+        lastRegionProc.running = true;
 
         if (payload.path) {
             loadShot(String(payload.path));
@@ -923,6 +933,7 @@ Item {
                 var lines = text.trim().split("\n");
                 var path = lines[lines.length - 1].trim();
                 root.capturing = false;
+                lastRegionProc.running = true;
                 if (path.length > 0 && path.indexOf("/") === 0) {
                     if (captureProc.append) {
                         root.addShot(path);
@@ -1413,6 +1424,7 @@ Item {
                 doc: doc
                 systemThemes: root.systemThemes
                 saveDir: root.shotDir
+                hasLastRegion: root.hasLastRegion
                 manifest: root.manifest
                 radius: 0
 
