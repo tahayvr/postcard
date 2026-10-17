@@ -21,6 +21,8 @@ BarWidget {
           tip: "Capture a region" },
         { glyph: "\uf2d0",    label: "Window", payload: '{"capture":"windows"}',
           tip: "Capture a window" },
+        { glyph: "\uf1da",    label: "Last region", payload: '{"capture":"last"}',
+          tip: "Capture the last region again" },
         { glyph: "\u{F0379}", label: "Screen", mode: "fullscreen", delayed: true,
           tip: "Capture the whole screen" },
         { glyph: "\uf121",    label: "Code",   payload: '{"code":true}',

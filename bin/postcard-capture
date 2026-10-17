@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# postcard-capture [region|windows|fullscreen|smart] [keep...]
+# postcard-capture [region|windows|fullscreen|smart|last] [keep...]
 # Take a screenshot and print the path of the file it wrote.
 # Prints nothing if the user cancelled.
 # The shot is only raw material for the editor, so it goes to the scratch
@@ -16,7 +16,7 @@ shift 2>/dev/null
 # Captures still on the card, when this one is going beside them.
 keep=("$@")
 case "$mode" in
-  region|windows|fullscreen|smart) ;;
+  region|windows|fullscreen|smart|last) ;;
   *) mode="region" ;;
 esac
 
@@ -44,10 +44,29 @@ cleanup() {
 trap cleanup EXIT
 [ -n "$no_hw_cursors" ] && set_no_hw_cursors 0
 
+# The last picked region, kept with the monitor layout it was picked on: on
+# any other layout the same numbers would be somewhere else entirely, so it
+# is dropped and the picker runs instead. Fullscreen is not a pick and keeps
+# nothing.
+memory="${XDG_RUNTIME_DIR:-/tmp}/postcard-last-region"
+layout="$(hyprctl monitors -j 2>/dev/null | jq -c '[.[] | {name, x, y, width, height, scale, transform}]' 2>/dev/null)"
+selection=""
+if [ "$mode" = last ]; then
+  { read -r kept_layout; read -r kept; } 2>/dev/null < "$memory"
+  if [ -n "$layout" ] && [ "${kept_layout:-}" = "$layout" ] && [ -n "${kept:-}" ]; then
+    selection="$kept"
+  else
+    mode=region
+  fi
+fi
+
 # The picker leaves its screen freeze running (PID on the first line), so grim
 # takes the frozen frame rather than the screen as the picker tears down.
-{ read -r freeze; read -r selection; } < <(omarchy-capture-region "$mode" --keep-freeze 2>/dev/null)
-[ -n "${selection:-}" ] || exit 0
+if [ -z "$selection" ]; then
+  { read -r freeze; read -r selection; } < <(omarchy-capture-region "$mode" --keep-freeze 2>/dev/null)
+  [ -n "${selection:-}" ] || exit 0
+  [ "$mode" != fullscreen ] && [ -n "$layout" ] && printf '%s\n%s\n' "$layout" "$selection" > "$memory"
+fi
 
 # A shot added in the same second as the one beside it must not overwrite it.
 base="$dir/screenshot-$(date +'%Y-%m-%d_%H-%M-%S')"

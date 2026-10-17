@@ -111,7 +111,8 @@ before you enable it.
 
 Enabling the plugin puts a Postcard button 󰆟 in the bar. Left-click it to grab a
 region or window, middle-click to make a code card from the selected text, right-click
-for a menu: region, window, screen with an optional delay, code card, or the editor. Move it with:
+for a menu: region, window, the last region again, screen with an optional delay, code
+card, or the editor. Move it with:
 
 ```sh
 omarchy bar move tahayvr.postcard --section center
@@ -121,12 +122,15 @@ Or bind keys in `~/.config/hypr/bindings.lua`:
 
 ```lua
 o.bind("SUPER + SHIFT + PRINT", "Postcard", "omarchy-shell shell summon tahayvr.postcard '{\"capture\":\"region\"}'")
+o.bind("SUPER + SHIFT + ALT + PRINT", "Postcard last region", "omarchy-shell shell summon tahayvr.postcard '{\"capture\":\"last\"}'")
 o.bind("SUPER + SHIFT + C", "Postcard code card", "omarchy-shell shell summon tahayvr.postcard '{\"code\":true}'")
 o.bind("SUPER + SHIFT + S", "Postcard editor", "omarchy-shell shell toggle tahayvr.postcard '{}'")
 ```
 
 The buttons at the top of the editor grab a region, window or screen, make a
-code card, or open a file. A code card takes the primary selection, or the
+code card, or open a file. **Last** grabs the region you picked last time again,
+with no picker, for the same spot on every take; it falls back to the picker
+when there is none yet or the monitors have changed since. A code card takes the primary selection, or the
 clipboard if nothing is highlighted.
 
 The ⓘ button beside Settings lists the keys that no button shows, with
@@ -143,6 +147,7 @@ links to this guide, to report a problem, and to sponsor Postcard.
 | `Ctrl+Z`                                         | undo                                                                    |
 | `Ctrl+Shift+Z` / `Ctrl+Y`                        | redo                                                                    |
 | `Ctrl+N`                                         | Grab another region                                                     |
+| `Ctrl+Shift+N`                                   | Capture the last region again                                           |
 | `Ctrl+K`                                         | Code card from the selected text                                        |
 | `Delete`                                         | Remove the selected annotations                                         |
 | `Shift`+click, or drag a box with the move tool  | Select several annotations; `Ctrl+A` selects them all                    |
@@ -178,7 +183,7 @@ A call answers `ok`, or a short reason such as `busy`, `no shot` or `bad json`.
 
 ```sh
 # Getting a picture in
-omarchy-shell shell call tahayvr.postcard capture region        # region | windows | fullscreen | smart
+omarchy-shell shell call tahayvr.postcard capture region        # region | windows | fullscreen | smart | last
 omarchy-shell shell call tahayvr.postcard capture '{"mode":"fullscreen","delay":5}'   # after 0–60 seconds
 omarchy-shell shell call tahayvr.postcard edit ~/Pictures/Screenshots/shot.png
 omarchy-shell shell call tahayvr.postcard add region            # another shot beside it: a mode, a path, or file

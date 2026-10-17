@@ -1320,7 +1320,7 @@ Item {
                 if (event.modifiers & Qt.ShiftModifier) doc.redo(); else doc.undo();
                 return true;
             case Qt.Key_Y: doc.redo(); return true;
-            case Qt.Key_N: root.capture("region"); return true;
+            case Qt.Key_N: root.capture(event.modifiers & Qt.ShiftModifier ? "last" : "region"); return true;
             case Qt.Key_K: root.code(); return true;
             }
             return false;
