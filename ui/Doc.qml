@@ -95,6 +95,14 @@ QtObject {
     property real inkWidth: 4
     property string arrowStyle: "straight"
     property string textFont: "mono"
+    property string textStyle: "outline"      // Model.TEXT_STYLES, for the next label
+    property string redactStyle: "pixelate"   // Model.REDACT_STYLES, for the next hidden area
+    property bool shapeFill: false            // the next box or ellipse, filled in
+    property int shapeCorner: Model.DEFAULT_CORNER   // the next box's corners, shot pixels
+    property bool highlightSnap: true         // a highlight takes the height of the text line under it
+    // The recent card this document is, once it has been recorded or was
+    // reopened from one; "" until then, and again on a new picture.
+    property string recentId: ""
     property int stepCounter: 0
     // The size a label was last pulled to, so the next one matches; 0 until
     // then, and a size that suits one shot may not suit the next.
@@ -318,7 +326,10 @@ QtObject {
     function placeCopies(marks, steps) {
         if (marks.length === 0) return 0;
         var d = Model.pasteStep(shotWidth, shotHeight) * steps;
-        var made = marks.map(function (a) { return Model.duplicateAnnotation(a, d, d); });
+        // Set off from the originals, but never past the edge of the picture,
+        // where nothing can be drawn by hand: back the other way instead.
+        var off = Model.copyOffset(marks.map(boundsOf), d, pictureArea);
+        var made = marks.map(function (a) { return Model.duplicateAnnotation(a, off.dx, off.dy); });
         made.forEach(function (a) { annotations.append(a); });
         renumberSteps();
         selectMany(made.map(function (a) { return a.uid; }), made[made.length - 1].uid);
@@ -357,6 +368,36 @@ QtObject {
         textFont = key;
         selectedRows().forEach(function (a) {
             if (a.kind === "text") updateAnnotation(a.uid, { font: key });
+        });
+    }
+
+    function setTextStyle(key) {
+        textStyle = key;
+        selectedRows().forEach(function (a) {
+            if (a.kind === "text") updateAnnotation(a.uid, { textStyle: key });
+        });
+    }
+
+    function setRedactStyle(key) {
+        redactStyle = key;
+        selectedRows().forEach(function (a) {
+            if (a.kind === "redact") updateAnnotation(a.uid, { style: key });
+        });
+    }
+
+    // Fill and corners for the next shape and the ones in hand; only a box
+    // has corners to round.
+    function setShapeFill(on) {
+        shapeFill = on;
+        selectedRows().forEach(function (a) {
+            if (a.kind === "box" || a.kind === "ellipse") updateAnnotation(a.uid, { fill: on });
+        });
+    }
+
+    function setShapeCorner(px) {
+        shapeCorner = px;
+        selectedRows().forEach(function (a) {
+            if (a.kind === "box") updateAnnotation(a.uid, { corner: px });
         });
     }
 
@@ -546,6 +587,7 @@ QtObject {
         textSize = 0;
         markClipboard = [];
         pasteCount = 0;
+        recentId = "";
         resetHistory();
     }
 
@@ -557,6 +599,8 @@ QtObject {
         tool = "select";
         spotShape = "rect"; spotDim = 55; spotRing = false; spotZoom = 1;
         inkColor = "#ff5f56"; inkWidth = 4; arrowStyle = "straight"; textFont = "mono";
+        textStyle = "outline"; redactStyle = "pixelate"; shapeFill = false;
+        shapeCorner = Model.DEFAULT_CORNER; highlightSnap = true;
     }
 
     function applyStyle(style) {

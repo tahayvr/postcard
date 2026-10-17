@@ -450,6 +450,89 @@ Window {
         win.check("an annotation is not resized by a hover",
                   doc.annotations.get(0).w, 0);
 
+        // ---- shift and alt while drawing ------------------------------------
+        // The press, the moves and the release by hand, with the modifiers
+        // the surface would have read off the pointer.
+        doc.clearAnnotations();
+        doc.shapeFill = true; doc.shapeCorner = 12;
+        var u = editor.beginDraw(10, 10);
+        editor.drawMove(110, 50, true, 0);
+        win.check("a plain drag is as wide and tall as the pointer went",
+                  doc.annotations.get(0).w + "x" + doc.annotations.get(0).h, "100x40");
+        win.check("and takes the fill and corners in hand", doc.annotations.get(0).fill + " " + doc.annotations.get(0).corner, "true 12");
+        editor.drawMove(110, 50, true, Qt.ShiftModifier);
+        win.check("with shift it is a square of the smaller extent",
+                  doc.annotations.get(0).w + "x" + doc.annotations.get(0).h, "40x40");
+        // The picture starts a padding's worth left of the shot: squared to
+        // 90, clamped to the picture's edge on the left, squared again.
+        var reach = Math.round(10 - doc.pictureArea.x);
+        editor.drawMove(-80, 200, true, Qt.ShiftModifier);
+        win.check("squared after the clamp, so it stays inside the picture",
+                  doc.annotations.get(0).w + "x" + doc.annotations.get(0).h, "-" + reach + "x" + reach);
+        editor.finishDraw(u);
+        doc.shapeFill = false; doc.shapeCorner = Model.DEFAULT_CORNER;
+
+        doc.clearAnnotations();
+        u = editor.beginDraw(100, 100);
+        editor.drawMove(130, 120, true, Qt.AltModifier);
+        win.check("with alt the press is the middle",
+                  win.rectText({ x: doc.annotations.get(0).x, y: doc.annotations.get(0).y,
+                                 width: doc.annotations.get(0).w, height: doc.annotations.get(0).h }), "70,80 60x40");
+        editor.drawMove(130, 120, true, Qt.AltModifier | Qt.ShiftModifier);
+        win.check("and with shift too, a square about it",
+                  win.rectText({ x: doc.annotations.get(0).x, y: doc.annotations.get(0).y,
+                                 width: doc.annotations.get(0).w, height: doc.annotations.get(0).h }), "80,80 40x40");
+        editor.drawMove(130, 120, true, 0);
+        win.check("letting go of alt puts the press back at the corner",
+                  win.rectText({ x: doc.annotations.get(0).x, y: doc.annotations.get(0).y,
+                                 width: doc.annotations.get(0).w, height: doc.annotations.get(0).h }), "100,100 30x20");
+        editor.finishDraw(u);
+
+        doc.tool = "arrow";
+        doc.clearAnnotations();
+        u = editor.beginDraw(50, 50);
+        editor.drawMove(150, 60, true, Qt.ShiftModifier);
+        win.check("an arrow with shift is held flat", Math.round(doc.annotations.get(0).h), 0);
+        editor.finishDraw(u);
+
+        // A click with the text tool is a line; a drag is a box to wrap in.
+        doc.tool = "text";
+        doc.clearAnnotations();
+        u = editor.beginDraw(20, 20);
+        editor.drawMove(30, 25, true, 0);
+        editor.finishDraw(u);
+        win.check("a short text drag is a click: a single line", doc.annotations.get(0).w, 0);
+        win.check("and the tool goes back to move", doc.tool, "select");
+        // Typed into, or the next label would take its place: a label with
+        // nothing in it goes when the selection moves on.
+        doc.updateAnnotation(u, { text: "one" });
+        doc.tool = "text";
+        u = editor.beginDraw(20, 60);
+        editor.drawMove(220, 70, true, 0);
+        editor.finishDraw(u);
+        doc.updateAnnotation(u, { text: "two" });
+        win.check("a long one is the width to wrap at", doc.annotations.get(1).w, 200);
+        win.check("carrying the style for the next label", doc.annotations.get(1).textStyle, doc.textStyle);
+
+        // A highlight let go asks for the text row under its middle.
+        var asked = "";
+        editor.snapRequested.connect(function (uid, x, y) { asked = uid + " " + x + " " + y; });
+        doc.tool = "highlight";
+        doc.clearAnnotations();
+        doc.kind = "shot";
+        u = editor.beginDraw(10, 10);
+        editor.drawMove(110, 50, true, 0);
+        editor.finishDraw(u);
+        win.check("a highlight asks for the row under its middle", asked, u + " 60 30");
+        asked = "";
+        doc.highlightSnap = false;
+        u = editor.beginDraw(10, 10);
+        editor.drawMove(110, 50, true, 0);
+        editor.finishDraw(u);
+        win.check("not when snapping is off", asked, "");
+        doc.highlightSnap = true;
+        doc.tool = "box";
+
         // ---- what a crop cuts away -----------------------------------------
         doc.clearAnnotations();
         var keep = Model.newAnnotation("box", 20, 20); keep.w = 40; keep.h = 40;

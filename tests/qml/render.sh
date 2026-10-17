@@ -126,6 +126,22 @@ ref="$(px 195 135)"; same=1
 for x in 196 197 198 199; do [ "$(px $x 135)" = "$ref" ] || same=0; done
 [ $same = 1 ] && echo "ok   redaction is blocky ($ref)" || { echo "FAIL redaction still shows stripes"; fail=1; }
 
+# A solid hidden area at shot (260,60)-(280,80) is one flat dark block over
+# the stripes: the same near-black at its corner and its middle.
+expect "solid redaction is flat (corner)"   301 101    17  17  17   8
+expect "solid redaction is flat (middle)"   310 110    17  17  17   8
+
+# A filled box at shot (340,120) 40x40: yellow well inside, and with corners
+# of 20 its very corner stays the black of the shot.
+expect "filled box is solid inside"         400 180   255 255   0
+if [ $gpu = 1 ]; then
+  expect "rounded corner leaves the corner bare" 381 161   0   0   0
+fi
+
+# A label on a pill at shot (220,160): the pill's cream shows just inside its
+# top-left corner, before the first glyph.
+expect "text pill is cream"                 263 203   248 245 235  20
+
 # "Hello" at shot (20,150) puts dark pixels on the white half.
 minv="$(magick "$out/export.png" -crop 100x30+60+188 -colorspace gray -format "%[fx:int(255*minima)]" info:)"
 [ "$minv" -lt 90 ] && echo "ok   text label rendered (min $minv)" || { echo "FAIL text label missing (min $minv)"; fail=1; }

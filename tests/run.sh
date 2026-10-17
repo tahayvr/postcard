@@ -35,6 +35,47 @@ cut="$(magick compare -metric AE "$t.png[50x50+0+0]" "$t-a.png[50x50+20+10]" nul
   || { echo "postcard-sheet produced '$sheet', crop differed by $cut"; fail=1; }
 rm -f "$t.png" "$t-a.png" "$t-b.png"
 
+# The text row under a point: two lines of dark text and one of blue, each
+# found from a point on it or just beside it; a flat area and a point between
+# two lines that are too far apart find nothing; the second is the nearest
+# line within reach.
+r="$XDG_RUNTIME_DIR/postcard-test-rows.png"
+magick -size 400x300 xc:'#f4f4f4' -fill '#222' -pointsize 18 -annotate +20+60 'The quick brown fox' \
+       -annotate +20+100 'jumps over the dog' -fill '#3366cc' -pointsize 14 -annotate +20+200 'small blue line' "$r" 2>/dev/null
+read -r t1 b1 <<<"$(bash "$root/bin/postcard-rows" "$r" 120 55)"
+read -r t2 b2 <<<"$(bash "$root/bin/postcard-rows" "$r" 120 80)"
+read -r t3 b3 <<<"$(bash "$root/bin/postcard-rows" "$r" 80 196)"
+flat="$(bash "$root/bin/postcard-rows" "$r" 300 260)"
+if [ "${t1:-}" ] && (( t1 >= 44 && t1 <= 50 && b1 >= 62 && b1 <= 68 )) \
+   && [ "${t2:-}" ] && (( t2 >= 84 && t2 <= 92 )) && [ "${t3:-}" ] && (( b3 - t3 >= 8 && b3 - t3 <= 16 )) \
+   && [ -z "$flat" ]; then
+  echo "postcard-rows finds the line of text under a point ($t1-$b1, $t2-$b2, $t3-$b3)"
+else
+  echo "postcard-rows gave '$t1 $b1' / '$t2 $b2' / '$t3 $b3' / flat '$flat'"; fail=1
+fi
+rm -f "$r"
+
+# Recent cards: six recorded, five kept, newest first, the shot copied in and
+# a thumbnail made; forgetting one leaves four.
+rd="$XDG_RUNTIME_DIR/postcard-test-recent"
+rm -rf "$rd"
+magick -size 60x40 xc:'#ff00ff' "$rd-shot.png" 2>/dev/null
+for i in 1 2 3 4 5 6; do
+  printf '{"version":1,"id":"r%s","stamp":%s,"kind":"shot","title":"t%s","slots":[{"source":"%s/r%s/0-shot.png","w":60,"h":40}]}' \
+    "$i" "$((1000 + i))" "$i" "$rd" "$i" \
+    | bash "$root/bin/postcard-recent" record "$rd" "r$i" "" "$rd-shot.png" "0-shot.png" >/dev/null
+  sleep 0.02
+done
+kept="$(bash "$root/bin/postcard-recent" list "$rd" | jq -r '[.[].id] | join(",")')"
+thumb="$(magick identify -format '%wx%h' "$rd/r6/thumb.png" 2>/dev/null)"
+copied="$(magick compare -metric AE "$rd/r6/0-shot.png" "$rd-shot.png" null: 2>&1 | cut -d' ' -f1)"
+bash "$root/bin/postcard-recent" forget "$rd" r6 >/dev/null
+left="$(bash "$root/bin/postcard-recent" list "$rd" | jq 'length')"
+[ "$kept" = "r6,r5,r4,r3,r2" ] && [ "$thumb" = "60x40" ] && [ "$copied" = "0" ] && [ "$left" = "4" ] \
+  && echo "postcard-recent keeps the last five, copies the shot and forgets on request" \
+  || { echo "postcard-recent: kept '$kept', thumb '$thumb', copy differs by '$copied', left '$left'"; fail=1; }
+rm -rf "$rd" "$rd-shot.png"
+
 echo "== qmllint"
 lintroot="$(mktemp -d)"
 ln -s "${OMARCHY_PATH:-/usr/share/omarchy}/shell" "$lintroot/qs"

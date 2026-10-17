@@ -13,6 +13,8 @@ Item {
     // size on screen. The grab wrapper holds the viewport's fit, so this
     // cannot be read off the stage's own scale.
     property real viewScale: 1
+    // Whether Shift on a handle means Shift yet (see Editor.modifiersTrusted).
+    property bool modifiersTrusted: true
     readonly property var geo: doc.geo
     readonly property bool codeKind: doc.kind === "code"
 
@@ -408,6 +410,7 @@ Item {
                 source: stage.codeKind ? codeSource : pixelSource
                 area: Qt.rect(x, y, width, height)
                 block: model.strength
+                solid: Model.redactStyle(model) === "solid"
             }
         }
     }
@@ -435,6 +438,7 @@ Item {
         doc: stage.doc
         pixelSource: stage.codeKind ? codeSource : pixelSource
         interactive: stage.interactive && !stage.doc.exporting
+        modifiersTrusted: stage.modifiersTrusted
         viewScale: stage.viewScale * stage.unit
         x: (stage.geo.cardX + stage.geo.inset) * stage.unit
         y: (stage.geo.cardY + stage.geo.chromeH + stage.geo.inset) * stage.unit
