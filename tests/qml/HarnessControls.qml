@@ -847,6 +847,66 @@ Window {
         win.check("still the same kind of mark", r.kind, "box");
         win.check("and the same color", String(r.color), "#123456");
 
+        // ---- zoom and pan --------------------------------------------------
+        // The view magnifies over the fit; the shot point under the pointer
+        // has to stay there through a zoom, the handles have to stay the same
+        // size on screen, and the scroll stops at the picture's edge.
+        doc.shotPath = "/tmp/postcard-example.png";
+        doc.shotWidth = 1600;
+        doc.shotHeight = 900;
+        doc.tool = "select";
+        doc.selectedId = "";
+        var stageItem = editor.exportTarget.children[0];
+        var layer = null;
+        for (var li = 0; li < stageItem.children.length; li++)
+            if (stageItem.children[li].hasOwnProperty("slop")) layer = stageItem.children[li];
+        win.check("starts fitted", editor.zoom + " " + editor.scroll.x + "," + editor.scroll.y, "1 0,0");
+        var handleBefore = layer ? layer.handle * layer.viewScale : 0;
+        var under = editor.shotAt(300, 200);
+        editor.zoomAt(2.5, 300, 200);
+        var after = editor.shotAt(300, 200);
+        win.check("zoom about a point keeps that shot pixel under it",
+                  Math.abs(under.x - after.x) < 0.01 && Math.abs(under.y - after.y) < 0.01, true);
+        win.check("the view is magnified", editor.zoom, 2.5);
+        win.check("and scrolled to show it", editor.scroll.x > 0 && editor.scroll.y > 0, true);
+        win.check("the handles stay screen-sized", layer ? Math.abs(layer.handle * layer.viewScale - handleBefore) < 0.01 : false, true);
+        editor.pan(-1e6, -1e6);
+        win.check("a scroll stops at the top left", editor.scroll.x + "," + editor.scroll.y, "0,0");
+        editor.pan(1e6, 1e6);
+        var atEnd = editor.scroll;
+        editor.pan(1, 1);
+        win.check("and at the bottom right", editor.scroll.x === atEnd.x && editor.scroll.y === atEnd.y && atEnd.x > 0, true);
+        editor.zoomAt(1e6, 0, 0);
+        // The stage's own scale is the fit times the zoom.
+        win.check("the zoom stops at four screen pixels a shot pixel",
+                  Math.abs(stageItem.viewScale - 4) < 0.01, true);
+        editor.zoomStep(-1);
+        win.check("a step is a quarter", Math.abs(stageItem.viewScale * 1.25 - 4) < 0.01, true);
+        editor.zoomReset();
+        win.check("0 fits it again", editor.zoom + " " + editor.scroll.x + "," + editor.scroll.y, "1 0,0");
+        // The footer's readout is a button back to the fit, only while zoomed.
+        function buttons(item, out) {
+            for (var i = 0; i < item.children.length; i++) {
+                var k = item.children[i];
+                if (k.hasOwnProperty("glyph") && k.hasOwnProperty("tip") && k.tip === "Back to fit (0)") out.push(k);
+                buttons(k, out);
+            }
+            return out;
+        }
+        var fit = buttons(editor, [])[0];
+        win.check("the footer carries a back-to-fit button", fit !== undefined, true);
+        win.check("hidden while the picture fits", fit ? fit.visible : true, false);
+        editor.statusText = "";          // a status message takes its place
+        editor.zoomAt(2, 100, 100);
+        win.check("shown while zoomed, with the zoom on it",
+                  fit ? fit.visible + " " + /^Zoom [0-9]+%$/.test(fit.label) : "", "true true");
+        if (fit) fit.clicked();
+        win.check("and a click fits the picture again", editor.zoom + " " + (fit ? fit.visible : ""), "1 false");
+        doc.resetHistory();
+        editor.zoomAt(2, 100, 100);
+        doc.resetHistory();
+        win.check("a new picture starts fitted", editor.zoom, 1);
+
         Qt.quit();
     })
 }

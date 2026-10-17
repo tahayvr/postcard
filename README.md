@@ -166,6 +166,8 @@ links to this guide, to report a problem, and to sponsor Postcard.
 | `Delete`                                         | Remove the selected annotations                                         |
 | `Shift`+click, or drag a box with the move tool  | Select several annotations; `Ctrl+A` selects them all                    |
 | Arrow keys, `Shift`+arrows                       | Move the selected annotations 1px, or 10px                              |
+| `Ctrl`+wheel, `+` / `-`, `0`                     | Zoom in about the pointer, step the zoom, or fit the picture again      |
+| Middle drag, wheel, or arrows with nothing selected | Scroll a zoomed view                                                  |
 | `Shift` while drawing                            | A square box, ellipse or spotlight; an arrow held to 45°; a corner handle keeps the shape |
 | `Alt` while drawing                              | Draw from the middle out                                                |
 | Drag with the text tool                          | A label that wraps at that width                                        |

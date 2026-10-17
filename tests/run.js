@@ -1404,6 +1404,38 @@ test("a recent card is written whole and read back clean", () => {
     ok("recent" in Model.CONFIG_FILES, "versioned like the other files");
 });
 
+test("the view zooms about the pointer and scrolls no further than the picture", () => {
+    // A 1600x900 stage fitted at 0.5 into an 840x490 viewport with a 20px
+    // margin, which it fills exactly, as Editor.qml's fit arranges.
+    eq(Model.zoomMax(0.5), 8, "one shot pixel is four screen pixels at most");
+    eq(Model.zoomMax(1), 4); eq(Model.zoomMax(5), 1, "never below 1");
+    near(Model.zoomStep(1, 1, 8), 1.25, 1e-9); near(Model.zoomStep(1.25, -1, 8), 1, 1e-9, "snaps back to exactly 1");
+    eq(Model.zoomStep(1, -1, 8), 1, "no zoom below the fit"); eq(Model.zoomStep(7.9, 1, 8), 8, "nor above the top");
+    near(Model.zoomWheel(1, 120, 8), 1.25, 1e-9, "a notch is a step");
+    near(Model.zoomWheel(1, 240, 8), 1.5625, 1e-9, "two notches are two");
+    near(Model.zoomWheel(1.25, -120, 8), 1, 1e-9);
+
+    let c = Model.viewContent(840, 490, 1600, 900, 0.5, 20);
+    eq([c.w, c.h, c.x, c.y], [840, 490, 20, 20], "a fitted stage fills the view");
+    c = Model.viewContent(840, 490, 1600, 900, 2, 20);
+    eq([c.w, c.h, c.x, c.y], [3240, 1840, 20, 20], "a zoomed one keeps the margin around it");
+    c = Model.viewContent(840, 490, 1600, 450, 0.5, 20);
+    eq([c.w, c.h, c.x, c.y], [840, 490, 20, 132.5], "and stays centred the way it still fits");
+
+    // (300, 200) in the view is stage (560, 360) at 0.5; at 2 that point is
+    // 1120 + 20 into the content, so the view scrolls to 840 to keep it at 300.
+    let s = Model.zoomAbout(840, 490, 1600, 900, 20, 0.5, 2, 300, 200, 0, 0);
+    eq([s.x, s.y], [840, 540]);
+    s = Model.zoomAbout(840, 490, 1600, 900, 20, 2, 0.5, 300, 200, 840, 540);
+    eq([s.x, s.y], [0, 0], "and back again");
+    s = Model.zoomAbout(840, 490, 1600, 900, 20, 0.5, 2, 830, 480, 0, 0);
+    eq([s.x, s.y], [2400, 1350], "the far corner lands the scroll at the end");
+    s = Model.zoomAbout(840, 490, 1600, 900, 20, 0.5, 2, 835, 485, 0, 0);
+    eq([s.x, s.y], [2400, 1350], "and no further");
+    eq(Model.clampScroll(-5, 99, { w: 1000, h: 500 }, 800, 450), { x: 0, y: 50 });
+    eq(Model.clampScroll(5, 5, { w: 800, h: 450 }, 800, 450), { x: 0, y: 0 }, "nothing to scroll when it fits");
+});
+
 test("the README's Keys table is the keys the About panel lists", () => {
     const readme = fs.readFileSync(path.join(__dirname, "..", "README.md"), "utf8");
     const table = readme.split("### Keys")[1].split("\n###")[0];

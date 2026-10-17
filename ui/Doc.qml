@@ -524,11 +524,15 @@ QtObject {
     }
 
     // The picture as it is now is where undo stops.
+    // Also what the editor takes as a new picture: its zoom goes back to fit.
+    signal historyReset()
+
     function resetHistory() {
         settle.stop();
         historyPending = false;
         history = [snapshot()];
         historyAt = 0;
+        historyReset();
     }
 
     function restore(s) {
