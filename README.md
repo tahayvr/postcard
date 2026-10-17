@@ -48,8 +48,9 @@ the picture that should not be public.
 **Annotation**
 
 - Arrows, boxes, ellipses, highlighter, text labels and numbered steps
-- Spotlight a rectangle or an ellipse and the rest of the screenshot dims,
-  leaving the background as it is
+- Spotlight a rectangle, a rounded rectangle or an ellipse and the rest of the
+  screenshot dims, leaving the background as it is; a white ring around each
+  spotlight is one click away
 - Magnify: drag over a detail and a zoomed lens (2×, 3× or 4×) appears beside it,
   joined by a line; move the lens and the magnified spot separately
 - Drag to move, and they stay pinned to the screenshot when you reframe

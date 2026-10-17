@@ -197,6 +197,17 @@ Window {
         id: ovalTimer
         interval: 250
         onTriggered: win.grab("export-spot-oval", function () {
+            doc.spotShape = "rounded";
+            doc.spotRing = true;
+            ringTimer.start();
+        })
+    }
+
+    Timer {
+        id: ringTimer
+        interval: 250
+        onTriggered: win.grab("export-spot-ring", function () {
+            doc.spotRing = false;
             // Two magnifiers at 2x, placed by hand: one on the stripes, whose
             // edges have to stay sharp rather than blend, and one on a hidden
             // area, which has to show its blocks rather than the stripes

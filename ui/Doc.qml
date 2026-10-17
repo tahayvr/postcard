@@ -155,8 +155,9 @@ QtObject {
     property rect cropRect: Qt.rect(0, 0, 0, 0)   // the selection being drawn
     readonly property bool cropUsable: Model.cropUsable(cropRect)
 
-    property string spotShape: "rect"       // rect | ellipse, for every spotlight
+    property string spotShape: "rect"       // Model.SPOT_SHAPES, for every spotlight
     property real spotDim: 55               // how dark the rest of the picture goes
+    property bool spotRing: false           // a white ring around every spotlight
     property int spotlightCount: 0
     // A ListModel emits nothing a binding can follow, so the dim layer and the
     // count above ride on this instead.
@@ -569,7 +570,7 @@ QtObject {
         applyStyle(Model.DEFAULT_STYLE);
         activePreset = Model.DEFAULT_PRESET;
         tool = "select";
-        spotShape = "rect"; spotDim = 55;
+        spotShape = "rect"; spotDim = 55; spotRing = false;
         inkColor = "#ff5f56"; inkWidth = 4; arrowStyle = "straight"; textFont = "mono";
         magnifyZoom = Model.MAGNIFY_ZOOM;
     }

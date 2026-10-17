@@ -26,7 +26,7 @@ if grep -q '"QtQuick/Color 6.12"' /usr/lib/qt6/qml/QtQuick/plugins.qmltypes 2>/d
 fi
 here="$tree/tests/qml"
 rm -f "$out/export.png" "$out/export-inset.png" "$out/export-gradient.png" "$out/export-mesh.png" \
-      "$out/export-odd.png" "$out/export-spot.png" "$out/export-spot-oval.png" "$out/export-magnify.png" \
+      "$out/export-odd.png" "$out/export-spot.png" "$out/export-spot-oval.png" "$out/export-spot-ring.png" "$out/export-magnify.png" \
       "$out/export-two.png"
 
 # Synthetic screenshot: white left half, black right half, and a band of
@@ -206,8 +206,9 @@ fi
 # One spotlight over shot (10,10)-(90,190) at 60%, on the same 480x280 frame as
 # the first export: inside stays the shot, outside is the shot at 40% of its
 # brightness, and the background around the card must not move at all.
+# spot-ring is the same box rounded, with a 2px white ring along its edge.
 if [ $gpu = 1 ]; then
-  for f in spot spot-oval; do
+  for f in spot spot-oval spot-ring; do
     [ -f "$out/export-$f.png" ] || { echo "FAIL $f export missing"; fail=1; continue; }
     spx() { magick "$out/export-$f.png" -format "%[fx:int(255*p{$1,$2}.r+0.5)] %[fx:int(255*p{$1,$2}.g+0.5)] %[fx:int(255*p{$1,$2}.b+0.5)]" info:; }
     sexpect() { local got; got="$(spx "$2" "$3")"; local tol=6
@@ -224,10 +225,19 @@ if [ $gpu = 1 ]; then
     sexpect "$f dims the black half outside"    390  60     0   0   0
     if [ "$f" = "spot" ]; then
       sexpect "$f keeps the corner of the hole"  54  54   255 255 255
-    else
+    elif [ "$f" = "spot-oval" ]; then
       # An ellipse inscribed in the same box: bright in the middle, and that
       # same corner now falls outside it.
       sexpect "$f dims the corner of the box"    54  54   102 102 102
+    else
+      # Corners of 16px (a fifth of 80): the box's very corner is cut off,
+      # clear of the ring along the arc.
+      sexpect "$f dims the corner of the box"    51  51   102 102 102
+      # The stroke's edge is anti-aliased; dimmed, this pixel would be 102.
+      read -r r _ _ <<<"$(spx 49 140)"
+      (( r > 230 )) && echo "ok   $f draws the ring outside the edge ($r)" \
+        || { echo "FAIL $f has no ring outside the edge at 49,140: got $r"; fail=1; }
+      sexpect "$f leaves the dim past the ring"  46 140   102 102 102
     fi
     sexpect "$f keeps the middle of the hole"    90 140   255 255 255
   done

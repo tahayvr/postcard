@@ -984,6 +984,22 @@ test("the spotlight dim is one path with a hole per spotlight", () => {
     // An ellipse closes on itself, so the fill has an inside to leave alone.
     const oval = Model.spotlightPath(100, 100, 0, 0, [{ x: 0, y: 0, w: 100, h: 60, shape: "ellipse" }]);
     ok(oval.indexOf("M0,30A50,30 0 0 1 100,30A50,30 0 0 1 0,30Z") !== -1, "two half arcs");
+
+    // A rounded hole's corners follow its shorter side; in a card's corner
+    // it takes whichever radius is larger, so it never pokes past the card.
+    const rounded = hole(Model.spotlightPath(100, 100, 0, 0, [{ x: 20, y: 20, w: 50, h: 30, shape: "rounded" }]));
+    eq("M" + rounded, "M26,20H64A6,6 0 0 1 70,26V44A6,6 0 0 1 64,50H26A6,6 0 0 1 20,44V26A6,6 0 0 1 26,20Z",
+       "a fifth of 30 on every corner");
+    const cornered = hole(Model.spotlightPath(100, 100, 12, 0, [{ x: 0, y: 0, w: 50, h: 30, shape: "rounded" }]));
+    ok(cornered.indexOf("A12,12 0 0 1 12,0Z") !== -1, "the card's larger corner wins");
+    ok(cornered.indexOf("A6,6 0 0 1 50,6") !== -1, "the hole's own corner elsewhere");
+
+    // The ring follows the holes alone, not the picture's outline.
+    const cards = [{ x: 0, y: 0, w: 100, h: 100, top: 0, bottom: 0 }];
+    eq(Model.spotlightHolesPath(cards, [{ x: 20, y: 20, w: 30, h: 30 }]), "M20,20H50V50H20V20Z");
+    eq(Model.spotlightHolesPath(cards, []), "", "no spotlight, no ring");
+    eq(Model.spotRingWidth(1920, 1080), 4);
+    eq(Model.spotRingWidth(300, 200), 2, "never thinner than 2px");
 });
 
 test("every export format saves under its own extension", () => {

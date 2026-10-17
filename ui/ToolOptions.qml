@@ -333,11 +333,25 @@ Loader {
                     onClicked: opts.doc.spotShape = "rect"
                 }
                 IconButton {
+                    glyph: "\u{F14FC}"
+                    tip: "Rounded spotlight"
+                    active: opts.doc.spotShape === "rounded"
+                    onClicked: opts.doc.spotShape = "rounded"
+                }
+                IconButton {
                     glyph: "\u{F0766}"
                     tip: "Round spotlight"
                     active: opts.doc.spotShape === "ellipse"
                     onClicked: opts.doc.spotShape = "ellipse"
                 }
+            }
+
+            IconButton {
+                anchors.verticalCenter: parent.verticalCenter
+                glyph: "\u{F0E95}"
+                tip: opts.doc.spotRing ? "Ring around each spotlight, click to remove" : "Add a ring around each spotlight"
+                active: opts.doc.spotRing
+                onClicked: opts.doc.spotRing = !opts.doc.spotRing
             }
 
             InlineSlider {
