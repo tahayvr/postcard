@@ -55,11 +55,27 @@ set_no_hw_cursors() {
     hyprctl keyword cursor:no_hardware_cursors "$1" &>/dev/null
 }
 freeze=""
+picker=""
+pick=""
+killtree() {
+  local c
+  for c in $(pgrep -P "$1" 2>/dev/null); do killtree "$c"; done
+  kill "$1" 2>/dev/null
+}
 cleanup() {
+  # Still picking: the picker, slurp and the freeze it started all go. It
+  # only names the freeze once the pick is over.
+  [ -n "$picker" ] && kill -0 "$picker" 2>/dev/null && killtree "$picker"
   [ -n "$freeze" ] && kill "$freeze" 2>/dev/null
+  [ -n "$pick" ] && rm -f "$pick"
   [ -n "$no_hw_cursors" ] && set_no_hw_cursors "$no_hw_cursors"
 }
+# A plugin reload or shell restart kills this mid-pick with a signal, and
+# bash runs no EXIT trap for a signal it has no trap of its own for: the
+# picker would stay on screen and the freeze up, with nothing left to end
+# them.
 trap cleanup EXIT
+trap 'exit 1' INT TERM HUP
 [ -n "$no_hw_cursors" ] && set_no_hw_cursors 0
 
 selection=""
@@ -71,7 +87,14 @@ fi
 # The picker leaves its screen freeze running (PID on the first line), so grim
 # takes the frozen frame rather than the screen as the picker tears down.
 if [ -z "$selection" ]; then
-  { read -r freeze; read -r selection; } < <(omarchy-capture-region "$mode" --keep-freeze 2>/dev/null)
+  # Into a file and waited on, since `wait` gives way to a signal and a
+  # `read` from a pipe does not.
+  pick="$dir/.pick-$$"
+  omarchy-capture-region "$mode" --keep-freeze > "$pick" 2>/dev/null &
+  picker=$!
+  wait "$picker"
+  { read -r freeze; read -r selection; } < "$pick"
+  rm -f "$pick"
   [ -n "${selection:-}" ] || exit 0
   [ "$mode" != fullscreen ] && [ -n "$layout" ] && printf '%s\n%s\n' "$layout" "$selection" > "$memory"
 fi

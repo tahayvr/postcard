@@ -390,7 +390,7 @@ Item {
                         e.accepted = false;
                         return;
                     }
-                    hold.toggling = anno.moving && (e.modifiers & Qt.ShiftModifier);
+                    hold.toggling = anno.moving && anno.shiftHeld(e.modifiers);
                     if (hold.toggling) {
                         anno.doc.toggleSelected(entry.a.uid);
                         return;

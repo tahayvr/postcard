@@ -58,10 +58,14 @@ Item {
             readonly property var area: Model.spotLensArea(lens.modelData.x - spot.holeOffset,
                                                            lens.modelData.y - spot.holeOffset,
                                                            lens.modelData.w, lens.modelData.h, spot.zoom)
-            x: lens.modelData.x
-            y: lens.modelData.y
-            width: lens.modelData.w
-            height: lens.modelData.h
+            // Exactly zoom times the area, so every block is the same size;
+            // it can reach a little past the hole, which the shader cuts.
+            readonly property var box: Model.spotLensBox(lens.modelData, lens.area, spot.zoom, spot.holeOffset)
+            readonly property var card: lens.modelData.card
+            x: lens.box.x
+            y: lens.box.y
+            width: lens.box.w
+            height: lens.box.h
 
             // One texel per shot pixel, scaled up unsmoothed: each pixel
             // becomes a clean block rather than a blur.
@@ -76,24 +80,32 @@ Item {
                 live: true
             }
 
-            // assets/shaders/lens.frag stretches the texture over the hole
-            // and cuts it to the hole's shape. A Shape filled with it mapped
-            // the texture at a scale that followed the layer's transform, and
-            // a layer mask would resample it.
+            // assets/shaders/lens.frag stretches the texture over the lens
+            // and cuts it to the hole and to the card's rounded corners. A
+            // Shape filled with it mapped the texture at a scale that followed
+            // the layer's transform, and a layer mask would resample it.
             ShaderEffect {
                 anchors.fill: parent
                 property variant source: lensTexture
                 property size size: Qt.size(lens.width, lens.height)
+                property vector4d hole: Qt.vector4d(lens.modelData.x - lens.x, lens.modelData.y - lens.y,
+                                                    lens.modelData.w, lens.modelData.h)
                 property vector4d radii: Qt.vector4d(lens.modelData.tl, lens.modelData.tr,
                                                      lens.modelData.br, lens.modelData.bl)
                 property real ellipse: lens.modelData.shape === "ellipse" ? 1 : 0
+                property vector4d card: Qt.vector4d(lens.card.x - lens.x, lens.card.y - lens.y,
+                                                    lens.card.w, lens.card.h)
+                property vector4d cardRadii: Qt.vector4d(lens.card.top, lens.card.top,
+                                                         lens.card.bottom, lens.card.bottom)
                 fragmentShader: Qt.resolvedUrl("../assets/shaders/lens.frag.qsb")
             }
         }
     }
 
     // Over the dim and the magnified area, so it reads the same however dark
-    // the rest goes.
+    // the rest goes; half a stroke inside each hole, so where a hole meets
+    // the card's edge none of it lands on the padding.
+    readonly property real ringWidth: spot.doc ? Model.spotRingWidth(spot.doc.shotWidth, spot.doc.shotHeight) : 2
     Shape {
         anchors.fill: parent
         visible: spot.ring
@@ -101,8 +113,8 @@ Item {
         ShapePath {
             fillColor: "transparent"
             strokeColor: "white"
-            strokeWidth: spot.doc ? Model.spotRingWidth(spot.doc.shotWidth, spot.doc.shotHeight) : 2
-            PathSvg { path: spot.ring ? Model.spotlightHolesPath(spot.cards, spot.holes) : "" }
+            strokeWidth: spot.ringWidth
+            PathSvg { path: spot.ring ? Model.spotlightHolesPath(spot.cards, spot.holes, spot.ringWidth / 2) : "" }
         }
     }
 }

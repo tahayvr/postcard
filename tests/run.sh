@@ -56,9 +56,14 @@ fi
 rm -f "$r"
 
 # Recent cards: six recorded, five kept, newest first, the shot copied in and
-# a thumbnail made; forgetting one leaves four.
-rd="$XDG_RUNTIME_DIR/postcard-test-recent"
-rm -rf "$rd"
+# a thumbnail made; forgetting one leaves four. The directory has a space in
+# it, and a folder named like the part before the space must survive the
+# pruning. A card recorded again with another shot drops the copy it stopped
+# using.
+rd="$XDG_RUNTIME_DIR/postcard-test recent"
+decoy="$XDG_RUNTIME_DIR/postcard-test"
+rm -rf "$rd" "$decoy"
+mkdir -p "$decoy"
 magick -size 60x40 xc:'#ff00ff' "$rd-shot.png" 2>/dev/null
 for i in 1 2 3 4 5 6; do
   printf '{"version":1,"id":"r%s","stamp":%s,"kind":"shot","title":"t%s","slots":[{"source":"%s/r%s/0-shot.png","w":60,"h":40}]}' \
@@ -69,12 +74,16 @@ done
 kept="$(bash "$root/bin/postcard-recent" list "$rd" | jq -r '[.[].id] | join(",")')"
 thumb="$(magick identify -format '%wx%h' "$rd/r6/thumb.png" 2>/dev/null)"
 copied="$(magick compare -metric AE "$rd/r6/0-shot.png" "$rd-shot.png" null: 2>&1 | cut -d' ' -f1)"
+printf '{"version":1,"id":"r6","stamp":2000,"kind":"shot","title":"t6","slots":[]}' \
+  | bash "$root/bin/postcard-recent" record "$rd" r6 "" "$rd-shot.png" "b-shot.png" >/dev/null
+swapped="$(cd "$rd/r6" && ls -- *-shot.png | tr '\n' ' ')"
 bash "$root/bin/postcard-recent" forget "$rd" r6 >/dev/null
 left="$(bash "$root/bin/postcard-recent" list "$rd" | jq 'length')"
 [ "$kept" = "r6,r5,r4,r3,r2" ] && [ "$thumb" = "60x40" ] && [ "$copied" = "0" ] && [ "$left" = "4" ] \
-  && echo "postcard-recent keeps the last five, copies the shot and forgets on request" \
-  || { echo "postcard-recent: kept '$kept', thumb '$thumb', copy differs by '$copied', left '$left'"; fail=1; }
-rm -rf "$rd" "$rd-shot.png"
+  && [ -d "$decoy" ] && [ "$swapped" = "b-shot.png " ] \
+  && echo "postcard-recent keeps the last five, copies the shot, drops unused copies and forgets on request" \
+  || { echo "postcard-recent: kept '$kept', thumb '$thumb', copy differs by '$copied', left '$left', decoy $([ -d "$decoy" ] && echo kept || echo deleted), copies '$swapped'"; fail=1; }
+rm -rf "$rd" "$rd-shot.png" "$decoy"
 
 echo "== qmllint"
 lintroot="$(mktemp -d)"

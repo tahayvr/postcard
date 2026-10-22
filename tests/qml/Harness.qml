@@ -230,6 +230,12 @@ Window {
         onTriggered: win.grab("export-spot-oval", function () {
             doc.spotShape = "rounded";
             doc.spotRing = true;
+            // A second one on the black half, where a ring inside the hole's
+            // edge shows against what the hole leaves lit.
+            var onBlack = Model.newAnnotation("spotlight", 310, 150);
+            onBlack.w = 80; onBlack.h = 40;
+            doc.addAnnotation(onBlack);
+            doc.selectedId = "";
             ringTimer.start();
         })
     }
@@ -239,6 +245,32 @@ Window {
         interval: 250
         onTriggered: win.grab("export-spot-ring", function () {
             doc.spotRing = false;
+            // A rounded card with a square spotlight a little along from its
+            // top left corner, where the hole must not darken the padding,
+            // and two spotlights overlapping, where both must stay lit.
+            doc.clearAnnotations();
+            doc.radius = 20;            // 20% of the card's 200px
+            doc.spotShape = "rect";
+            var corner = Model.newAnnotation("spotlight", 5, 0);
+            corner.w = 60; corner.h = 60;
+            doc.annotations.append(corner);
+            var first = Model.newAnnotation("spotlight", 100, 155);
+            first.w = 40; first.h = 40;
+            doc.annotations.append(first);
+            var second = Model.newAnnotation("spotlight", 120, 160);
+            second.w = 40; second.h = 40;
+            doc.annotations.append(second);
+            doc.selectedId = "";
+            doc.annotationsEdited();
+            edgeTimer.start();
+        })
+    }
+
+    Timer {
+        id: edgeTimer
+        interval: 250
+        onTriggered: win.grab("export-spot-edge", function () {
+            doc.radius = 0;
             // Two square spotlights magnifying 4x with no dim: one on the
             // stripes, whose edges have to stay sharp rather than blend,
             // and one centred just inside a hidden area, so the blocks it
@@ -256,6 +288,15 @@ Window {
             var onHidden = Model.newAnnotation("spotlight", 255, 70);
             onHidden.w = 40; onHidden.h = 40;
             doc.annotations.append(onHidden);
+
+            // And a solid block, magnified past its edge the same way: what
+            // lies outside the mark has to be the block's color, not white.
+            var solid = Model.newAnnotation("redact", 20, 20);
+            solid.w = 40; solid.h = 40; solid.style = "solid";
+            doc.annotations.append(solid);
+            var onSolid = Model.newAnnotation("spotlight", 38, 20);
+            onSolid.w = 40; onSolid.h = 40;
+            doc.annotations.append(onSolid);
             doc.spotShape = "rect";
             doc.spotDim = 0;
             doc.spotZoom = 4;

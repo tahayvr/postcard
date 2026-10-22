@@ -72,7 +72,8 @@ Rectangle {
         var kind = doc.annotations.get(i).kind;
         // A label dragged out takes a width to wrap at, nothing more.
         if (kind === "text") {
-            doc.annotations.setProperty(i, "w", Math.max(0, px - draw.ox));
+            var tq = Model.clampToArea(px, py, doc.pictureArea);
+            doc.annotations.setProperty(i, "w", Math.max(0, tq.x - draw.ox));
             return;
         }
         // A mark is drawn inside the picture, whatever the pointer does.
@@ -87,7 +88,7 @@ Rectangle {
             w = c.w; h = c.h;
         }
         if (alt && Model.drawsFromCentre(kind)) {
-            var m = Model.centredDrag(draw.ox, draw.oy, w, h, doc.pictureArea);
+            var m = Model.centredDrag(draw.ox, draw.oy, w, h, doc.pictureArea, shift);
             doc.annotations.setProperty(i, "x", m.x);
             doc.annotations.setProperty(i, "y", m.y);
             w = m.w; h = m.h;
@@ -503,7 +504,7 @@ Rectangle {
 
                     onPressed: function (e) {
                         marquee.from = Qt.point(e.x, e.y);
-                        marquee.adding = (e.modifiers & Qt.ShiftModifier) !== 0;
+                        marquee.adding = editor.shiftHeld(e.modifiers);
                         marquee.boxing = false;
                         if (!marquee.adding) doc.selectedId = "";
                     }

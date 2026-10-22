@@ -32,6 +32,33 @@ function eq(actual, expected, what) {
 function ok(cond, what) { if (!cond) throw new Error(what || "expected truthy"); }
 function near(a, b, tol, what) { if (Math.abs(a - b) > tol) throw new Error((what || "value") + ": " + a + " not within " + tol + " of " + b); }
 
+// Whether an SVG path filled odd-even covers a point. Arcs are taken as
+// their chords, which only matters right on a curve, so points are chosen
+// clear of them.
+function fillsAt(d, x, y) {
+    const subpaths = [];
+    let cur = null, px = 0, py = 0;
+    const re = /([MLHVAZ])([^MLHVAZ]*)/g;
+    let m;
+    while ((m = re.exec(d))) {
+        const n = m[2].trim().split(/[\s,]+/).filter(Boolean).map(Number);
+        switch (m[1]) {
+        case "M": cur = []; subpaths.push(cur); px = n[0]; py = n[1]; cur.push([px, py]); break;
+        case "L": px = n[0]; py = n[1]; cur.push([px, py]); break;
+        case "H": px = n[0]; cur.push([px, py]); break;
+        case "V": py = n[0]; cur.push([px, py]); break;
+        case "A": px = n[5]; py = n[6]; cur.push([px, py]); break;
+        }
+    }
+    let crossings = 0;
+    for (const poly of subpaths)
+        for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+            const [xi, yi] = poly[i], [xj, yj] = poly[j];
+            if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) crossings++;
+        }
+    return crossings % 2 === 1;
+}
+
 // ---------------------------------------------------------------- Model.js
 
 const base = { shotWidth: 1000, shotHeight: 500, padding: 10, ratio: "auto", balance: true, frame: "none" };
@@ -269,6 +296,11 @@ test("marks follow their shot when the layout changes", () => {
     eq(r.marks[0].x, 10, "a mark on the second shot moves with it to the front");
     eq(r.marks[1].x, 1100, "an arrow's tail stays on the shot it started on");
     eq(r.marks[1].x + r.marks[1].w, 100, "and its tip on the other");
+    // A wrapping label whose width runs onto the next shot: the width is a
+    // width, not a corner on that shot, so it comes back as it was.
+    const wrap = Object.assign(Model.newAnnotation("text", 700, 50), { w: 200, fontSize: 20 });
+    const wr = Model.remapAnnotations([wrap], before, [a, b], swapped, [b, a]).marks[0];
+    eq([wr.x, wr.w], [1100, 200], "a wrapping label keeps its width");
 
     const alone = Model.slotLayout([a], o);
     r = Model.remapAnnotations([onB, across], before, [a, b], alone, [a]);
@@ -970,38 +1002,58 @@ test("the spotlight dim is one path with a hole per spotlight", () => {
     eq(Model.spotlightPath(100, 100, 0, 0, [{ x: 200, y: 0, w: 20, h: 20 }]).split("M").length - 1, 1,
        "a hole entirely outside is dropped");
 
-    // Reaching a rounded corner, the hole takes that corner's radius, so it
-    // follows the card instead of cutting across it.
+    // Reaching into a rounded corner, the hole is clipped to the card, so
+    // nothing outside the card is filled in: in the very corner, nor a few
+    // pixels along from it, which a hole taking the corner's radius only
+    // when it started exactly at the corner left as a dark wedge.
     const hole = (p) => p.split("M").slice(2).join("M");   // subpath 1 is the picture
-    ok(hole(Model.spotlightPath(100, 100, 12, 8, [{ x: 0, y: 0, w: 50, h: 50 }]))
-        .indexOf("A12,12 0 0 1 12,0Z") !== -1, "the hole rounds off the top left");
+    ok(!fillsAt(Model.spotlightPath(100, 100, 12, 8, [{ x: 0, y: 0, w: 50, h: 50 }]), 1, 1),
+       "the very corner, outside the card, is left alone");
+    const along = Model.spotlightPath(100, 100, 30, 30, [{ x: 5, y: 0, w: 50, h: 50 }]);
+    ok(!fillsAt(along, 6, 3), "nor a hole starting a little along the top");
+    ok(!fillsAt(along, 40, 20), "the hole is lit");
+    ok(fillsAt(along, 70, 70), "and the rest dimmed");
+    ok(!fillsAt(Model.spotlightPath(100, 100, 30, 30, [{ x: 0, y: 0, w: 20, h: 20, shape: "ellipse" }]), 4, 4),
+       "nor a small ellipse in the corner");
     ok(hole(Model.spotlightPath(100, 100, 12, 8, [{ x: 20, y: 20, w: 50, h: 50 }]))
         .indexOf("A") === -1, "a hole away from the corners stays square");
+
+    // Overlapping holes stay lit where they overlap, however many.
+    const two = Model.spotlightPath(100, 100, 0, 0, [{ x: 10, y: 10, w: 40, h: 40 }, { x: 30, y: 30, w: 40, h: 40 }]);
+    ok(!fillsAt(two, 40, 40), "lit where two overlap");
+    ok(!fillsAt(two, 20, 20) && !fillsAt(two, 60, 60), "and in each alone");
+    ok(fillsAt(two, 85, 15), "dimmed outside both");
+    const three = Model.spotlightPath(100, 100, 0, 0, [{ x: 10, y: 10, w: 40, h: 40 }, { x: 30, y: 30, w: 40, h: 40 },
+                                                       { x: 20, y: 20, w: 40, h: 40 }]);
+    ok(!fillsAt(three, 40, 40), "lit where three overlap");
+    ok(!fillsAt(three, 25, 45) && !fillsAt(three, 55, 35), "and where two of the three do");
 
     // An ellipse closes on itself, so the fill has an inside to leave alone.
     const oval = Model.spotlightPath(100, 100, 0, 0, [{ x: 0, y: 0, w: 100, h: 60, shape: "ellipse" }]);
     ok(oval.indexOf("M0,30A50,30 0 0 1 100,30A50,30 0 0 1 0,30Z") !== -1, "two half arcs");
 
-    // A rounded hole's corners follow its shorter side; in a card's corner
-    // it takes whichever radius is larger, so it never pokes past the card.
+    // A rounded hole's corners follow its shorter side.
     const rounded = hole(Model.spotlightPath(100, 100, 0, 0, [{ x: 20, y: 20, w: 50, h: 30, shape: "rounded" }]));
     eq("M" + rounded, "M26,20H64A6,6 0 0 1 70,26V44A6,6 0 0 1 64,50H26A6,6 0 0 1 20,44V26A6,6 0 0 1 26,20Z",
        "a fifth of 30 on every corner");
-    const cornered = hole(Model.spotlightPath(100, 100, 12, 0, [{ x: 0, y: 0, w: 50, h: 30, shape: "rounded" }]));
-    ok(cornered.indexOf("A12,12 0 0 1 12,0Z") !== -1, "the card's larger corner wins");
-    ok(cornered.indexOf("A6,6 0 0 1 50,6") !== -1, "the hole's own corner elsewhere");
+    ok(!fillsAt(Model.spotlightPath(100, 100, 12, 0, [{ x: 0, y: 0, w: 50, h: 30, shape: "rounded" }]), 1, 1),
+       "a rounded hole in a sharper card corner is clipped to the card too");
 
     // The ring follows the holes alone, not the picture's outline.
     const cards = [{ x: 0, y: 0, w: 100, h: 100, top: 0, bottom: 0 }];
     eq(Model.spotlightHolesPath(cards, [{ x: 20, y: 20, w: 30, h: 30 }]), "M20,20H50V50H20V20Z");
+    eq(Model.spotlightHolesPath(cards, [{ x: 20, y: 20, w: 30, h: 30 }], 1), "M21,21H49V49H21V21Z",
+       "inset by half its stroke, so it stays inside the hole");
     eq(Model.spotlightHolesPath(cards, []), "", "no spotlight, no ring");
     eq(Model.spotRingWidth(1920, 1080), 4);
     eq(Model.spotRingWidth(300, 200), 2, "never thinner than 2px");
 
-    // A rounded hole hands the lens the same corners the dim cut.
+    // The lens is handed the hole's own corners and the card to clip to.
     const boxes = Model.spotlightHoleBoxes([{ x: 0, y: 0, w: 100, h: 100, top: 12, bottom: 0 }],
         [{ x: 0, y: 0, w: 50, h: 30, shape: "rounded" }, { x: 40, y: 40, w: 20, h: 20, shape: "ellipse" }]);
-    eq([boxes[0].tl, boxes[0].tr, boxes[0].br, boxes[0].bl], [12, 6, 6, 6], "the card's corner, then its own");
+    eq([boxes[0].tl, boxes[0].tr, boxes[0].br, boxes[0].bl], [6, 6, 6, 6], "its own corners");
+    eq([boxes[0].clipped, boxes[1].clipped], [true, false], "clipped only where it reaches a rounded corner");
+    eq(boxes[0].card.top, 12);
     eq(boxes[1].shape, "ellipse");
 });
 
@@ -1012,6 +1064,16 @@ test("a magnifying spotlight shows the middle of its box at whole pixels", () =>
     eq(Model.spotZoom(1), 1);
     eq(Model.spotLensArea(100, 100, 80, 40, 2), { x: 120, y: 110, w: 40, h: 20 }, "a quarter of the box, centred");
     eq(Model.spotLensArea(0, 0, 100, 50, 3), { x: 34, y: 17, w: 33, h: 17 }, "rounded to whole pixels");
+    // The lens is exactly zoom times what it shows, so every block is the
+    // same size, centred on the hole and starting on a whole pixel.
+    const box = { x: 10.4, y: 20, w: 101, h: 40 };
+    const area = Model.spotLensArea(box.x, box.y, box.w, box.h, 2);
+    const lens = Model.spotLensBox(box, area, 2, 0);
+    eq([lens.w, lens.h], [area.w * 2, area.h * 2], "zoom times the area, whatever the box");
+    ok(Number.isInteger(lens.x) && Number.isInteger(lens.y), "on a whole pixel");
+    near(lens.x + lens.w / 2, box.x + box.w / 2, 1.5, "centred on the hole");
+    eq(Model.TOOLS.indexOf("magnify"), -1, "the magnifier is no tool any more");
+    ok(Model.TOOLS.indexOf("crop") !== -1 && Model.TOOLS.indexOf("select") !== -1);
 });
 
 test("every export format saves under its own extension", () => {
@@ -1326,6 +1388,8 @@ test("alt draws from the middle out, and stops at the picture", () => {
     const area = { x: 0, y: 0, w: 400, h: 300 };
     eq(Model.centredDrag(20, 100, 50, 50, area), { x: 0, y: 50, w: 40, h: 100 }, "cut to the nearer edge on the left");
     eq(Model.centredDrag(390, 290, 50, 50, area), { x: 380, y: 280, w: 20, h: 20 }, "and the far corner");
+    eq(Model.centredDrag(10, 100, 40, 40, area, true), { x: 0, y: 90, w: 20, h: 20 },
+       "with Shift too it stays square near an edge");
 });
 
 test("shift on a corner keeps the proportions", () => {
@@ -1396,7 +1460,7 @@ test("a recent card is written whole and read back clean", () => {
        "an unknown kind is dropped");
     eq(Model.cleanRecent({ id: "x", kind: "shot", slots: [{ source: "/p", w: 10, h: 10, crop: { x: 0, y: 0, w: 4, h: 4 } }] })
        .slots[0].crop, null, "a crop too small to be one is dropped");
-    eq(Model.recentSourceName(2, "/tmp/x/shot.png"), "2-shot.png");
+    eq(Model.recentSourceName("ab12", "/tmp/x/shot.png"), "ab12-shot.png");
     const list = [{ id: "a" }, { id: "b" }];
     eq(Model.findRecent(list, "b").id, "b"); eq(Model.findRecent(list, "2").id, "b", "by place, 1 is the newest");
     eq(Model.findRecent(list, "3"), null); eq(Model.findRecent(list, ""), null);

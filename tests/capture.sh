@@ -16,7 +16,14 @@ cat > "$scratch/bin/omarchy-capture-region" <<'MOCK'
 [[ "$*" == "${TEST_PICKER:-$TEST_MODE} --keep-freeze" ]] || { echo "picker args: $*" >> "$TEST_LOG"; exit 2; }
 sleep 30 &
 echo "$!" > "$TEST_LOG.freeze"
-echo "$!"
+# Like the real picker, the freeze is named only once the pick is over, and
+# slurp is a child that holds the pick open.
+if [ -n "${TEST_HANG:-}" ]; then
+  sleep 30 &
+  echo "$!" > "$TEST_LOG.slurp"
+  wait "$!"
+fi
+echo "$(cat "$TEST_LOG.freeze")"
 [ -n "$TEST_SELECTION" ] && echo "$TEST_SELECTION"
 exit 0
 MOCK
@@ -88,5 +95,18 @@ cursor_restored || fail "last left the cursor setting changed"
 rm -f "$TEST_LOG.freeze"
 result="$(TEST_WIDTH=2560 TEST_PICKER=region capture last "" ok)"
 [[ -z "$result" && -e "$TEST_LOG.freeze" ]] || fail "last took a region kept on another monitor layout"
-echo "capture: every mode, cancel, grim failure, same-second shots, cleanup, freeze, cursor and last region OK"
+
+# Killed mid-pick, as a plugin reload does: the picker, its slurp and its
+# freeze all go, and the cursor setting comes back.
+rm -f "$TEST_LOG.freeze" "$TEST_LOG.slurp"
+: > "$TEST_LOG"
+TEST_HANG=1 TEST_MODE=region TEST_SELECTION="1,1 5x5" TEST_GRIM=ok bash "$root/bin/postcard-capture" region >/dev/null &
+cap=$!
+for _ in $(seq 1 50); do [ -s "$TEST_LOG.slurp" ] && break; sleep 0.05; done
+kill -TERM "$cap"; wait "$cap" 2>/dev/null || true
+sleep 0.2
+! kill -0 "$(cat "$TEST_LOG.slurp")" 2>/dev/null || fail "a killed capture left the picker running"
+freeze_gone || fail "a killed capture left the screen frozen"
+cursor_restored || fail "a killed capture left the cursor setting changed: $(cat "$TEST_LOG")"
+echo "capture: every mode, cancel, grim failure, same-second shots, cleanup, freeze, cursor, last region and a killed pick OK"
 

@@ -513,6 +513,14 @@ Window {
         doc.updateAnnotation(u, { text: "two" });
         win.check("a long one is the width to wrap at", doc.annotations.get(1).w, 200);
         win.check("carrying the style for the next label", doc.annotations.get(1).textStyle, doc.textStyle);
+        // Dragged past the card, the width stops at the picture's edge.
+        doc.tool = "text";
+        u = editor.beginDraw(300, 100);
+        editor.drawMove(5000, 110, true, 0);
+        editor.finishDraw(u);
+        doc.updateAnnotation(u, { text: "three" });
+        win.check("a text drag stops at the picture's edge",
+                  Math.round(doc.annotations.get(2).w), Math.round(doc.pictureArea.x + doc.pictureArea.w - 300));
 
         // A highlight let go asks for the text row under its middle.
         var asked = "";

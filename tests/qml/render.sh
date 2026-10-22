@@ -26,7 +26,7 @@ if grep -q '"QtQuick/Color 6.12"' /usr/lib/qt6/qml/QtQuick/plugins.qmltypes 2>/d
 fi
 here="$tree/tests/qml"
 rm -f "$out/export.png" "$out/export-inset.png" "$out/export-gradient.png" "$out/export-mesh.png" \
-      "$out/export-odd.png" "$out/export-spot.png" "$out/export-spot-oval.png" "$out/export-spot-ring.png" "$out/export-magnify.png" \
+      "$out/export-odd.png" "$out/export-spot.png" "$out/export-spot-oval.png" "$out/export-spot-ring.png" "$out/export-spot-edge.png" "$out/export-magnify.png" \
       "$out/export-two.png" "$out/export-zoomed.png"
 
 # Synthetic screenshot: white left half, black right half, and a band of
@@ -243,7 +243,8 @@ fi
 # One spotlight over shot (10,10)-(90,190) at 60%, on the same 480x280 frame as
 # the first export: inside stays the shot, outside is the shot at 40% of its
 # brightness, and the background around the card must not move at all.
-# spot-ring is the same box rounded, with a 2px white ring along its edge.
+# spot-ring is the same box rounded, with a 2px white ring inside its edge,
+# and a second one on the black half at shot (310..390, 150..190).
 if [ $gpu = 1 ]; then
   for f in spot spot-oval spot-ring; do
     [ -f "$out/export-$f.png" ] || { echo "FAIL $f export missing"; fail=1; continue; }
@@ -270,14 +271,36 @@ if [ $gpu = 1 ]; then
       # Corners of 16px (a fifth of 80): the box's very corner is cut off,
       # clear of the ring along the arc.
       sexpect "$f dims the corner of the box"    51  51   102 102 102
-      # The stroke's edge is anti-aliased; dimmed, this pixel would be 102.
-      read -r r _ _ <<<"$(spx 49 140)"
-      (( r > 230 )) && echo "ok   $f draws the ring outside the edge ($r)" \
-        || { echo "FAIL $f has no ring outside the edge at 49,140: got $r"; fail=1; }
+      # Inside the second hole's top edge, over black: only the ring is
+      # bright there, the hole below it and the dim above it are black.
+      read -r r _ _ <<<"$(spx 390 191)"
+      (( r > 230 )) && echo "ok   $f draws the ring inside the edge ($r)" \
+        || { echo "FAIL $f has no ring inside the edge at 390,191: got $r"; fail=1; }
+      sexpect "$f leaves the hole black under the ring" 390 197    0   0   0
+      sexpect "$f puts none of the ring outside the hole" 390 186  0   0   0
       sexpect "$f leaves the dim past the ring"  46 140   102 102 102
     fi
     sexpect "$f keeps the middle of the hole"    90 140   255 255 255
   done
+fi
+
+# ---- spotlights at a rounded corner and overlapping ---------------------------
+# The card has 40px corners. One spotlight at shot (5..65, 0..60) starts a
+# little along from the top left corner: export (46,42) is padding outside
+# the corner's arc and must stay the background, (70,70) is lit. Two more at
+# shot (100..140, 155..195) and (120..160, 160..200) overlap at shot
+# (120..140, 160..195): lit there and in each alone, dimmed outside both.
+if [ $gpu = 1 ]; then
+  if [ -f "$out/export-spot-edge.png" ]; then
+    f=spot-edge
+    sexpect "a spotlight near a rounded corner leaves the padding alone" 46 42  0 255   0
+    sexpect "and lights the hole"                                       70 70 255 255 255
+    sexpect "two overlapping spotlights are lit where they overlap"   170 220 255 255 255
+    sexpect "and in one alone"                                        145 210 255 255 255
+    sexpect "and dim outside both"                                    100 215 102 102 102
+  else
+    echo "FAIL spot-edge export missing"; fail=1
+  fi
 fi
 
 # ---- magnifying spotlight -------------------------------------------------
@@ -288,9 +311,13 @@ fi
 # land at 151 and 152. The two pixels either side of that edge must be pure;
 # one that smoothed its pixels would blend them. The other sits at shot
 # (255..295, 70..110), centred just inside a hidden block, and shows shot
-# (270..280, 85..95) of it. Shot 277 and 279 land at 323 and 331, clear of
-# the hidden mark, on stripes of different colors: unless the block was
-# pixelated before magnifying, they differ.
+# (270..280, 85..95) of it. Export 324 and 326 are clear of the hidden mark,
+# over stripes of different colors (red under 324, blue under 326), and both
+# show shot 277, inside one block: equal only if a lens is drawn there and
+# the block was pixelated before magnifying. A third sits at shot (38..78,
+# 20..60) beside a solid block at (20..60, 20..60); export (103,80) shows
+# shot (59,40), inside the block, over white past its edge: it has to be
+# the block's #111111.
 if [ $gpu = 1 ]; then
   if [ -f "$out/export-magnify.png" ]; then
     mpx() { magick "$out/export-magnify.png" -format "%[fx:int(255*p{$1,$2}.r+0.5)] %[fx:int(255*p{$1,$2}.g+0.5)] %[fx:int(255*p{$1,$2}.b+0.5)]" info:; }
@@ -301,12 +328,18 @@ if [ $gpu = 1 ]; then
     else
       echo "FAIL a magnifying spotlight smeared the stripes: got $r1 $g1 $b1 then $r2 $g2 $b2"; fail=1
     fi
-    read -r h1 _ k1 <<<"$(mpx 323 130)"
-    read -r h2 _ k2 <<<"$(mpx 331 130)"
+    read -r h1 _ k1 <<<"$(mpx 324 130)"
+    read -r h2 _ k2 <<<"$(mpx 326 130)"
     if (( h1 - h2 < 12 && h2 - h1 < 12 && k1 - k2 < 12 && k2 - k1 < 12 )); then
       echo "ok   a magnifying spotlight over a hidden area shows the blocks, not what is under them"
     else
       echo "FAIL a magnifying spotlight showed a hidden area: got $h1 $k1 then $h2 $k2"; fail=1
+    fi
+    read -r s1 s2 s3 <<<"$(mpx 103 80)"
+    if (( s1 < 30 && s2 < 30 && s3 < 30 )); then
+      echo "ok   a magnifying spotlight over a solid block shows the block"
+    else
+      echo "FAIL a magnifying spotlight showed what a solid block covers: got $s1 $s2 $s3"; fail=1
     fi
   else
     echo "FAIL magnify export missing"; fail=1

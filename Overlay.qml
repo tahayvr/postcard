@@ -198,7 +198,12 @@ Item {
         var o;
         try { o = JSON.parse(json); } catch (e) { return "bad json"; }
         var applied = 0;
-        for (var k in o) if (settable.indexOf(k) !== -1) { doc[k] = o[k]; applied++; }
+        for (var k in o) {
+            if (settable.indexOf(k) === -1) continue;
+            if (k === "tool" && Model.TOOLS.indexOf(String(o[k])) === -1) continue;
+            doc[k] = o[k];
+            applied++;
+        }
         return applied ? "ok" : "nothing to set";
     }
 
@@ -213,7 +218,9 @@ Item {
         var added = 0;
         for (var i = 0; i < list.length; i++) {
             var o = list[i];
-            if (!o || !o.kind) continue;
+            // A kind this build cannot draw (a magnifier from before it became
+            // a spotlight mode) would be an invisible mark that still counts.
+            if (!o || Model.ANNOTATION_KINDS.indexOf(String(o.kind)) === -1) continue;
             var a = Model.newAnnotation(String(o.kind), Number(o.x) || 0, Number(o.y) || 0);
             a.w = Number(o.w) || 0;
             a.h = Number(o.h) || 0;
@@ -267,7 +274,8 @@ Item {
                   || textProc.running || ocrProc.running || rowsProc.running,
             hasContent: doc.hasContent,
             // Rendering is `busy`; encoding and writing the file comes after.
-            delivering: deliver.running || dragFile.running || shotCopy.running || recordProc.running,
+            delivering: deliver.running || dragFile.running || shotCopy.running || recordProc.running
+                        || recentsProc.running,
             lastSaved: root.lastSaved,
             recentId: doc.recentId, recents: root.recents.length,
             shotPath: doc.shotPath, shotWidth: doc.shotWidth, shotHeight: doc.shotHeight,
@@ -337,6 +345,7 @@ Item {
             Qt.callLater(function () {
                 editor.statusText = "Only the first " + Model.plural(text.split("\n").length, "line") + " fit on a card";
             });
+        doc.startCard();
         doc.clearAnnotations();
         doc.resetHistory();
         // A code card is its own picture; shots left from before would still
@@ -431,6 +440,7 @@ Item {
     function loadShot(path, recut) {
         if (!path) return;
         if (!recut) {
+            doc.startCard();
             doc.clearAnnotations();
             doc.resetHistory();
             doc.shotName = path.split("/").pop();
@@ -473,23 +483,25 @@ Item {
     // picture does not have yet. A request made while a sheet is being
     // composed waits, and the latest one wins.
     property var slotsWanted: null
-    function applySlots(slots, note) {
+    // keepView: the same shots laid out again, so the zoom stays where it is;
+    // a new shot, a crop or a reopened card goes back to the fit.
+    function applySlots(slots, note, keepView) {
         if (slots.length === 0) return "no shot";
-        if (sheetProc.running) { root.slotsWanted = { slots: slots, note: note }; return "ok"; }
+        if (sheetProc.running) { root.slotsWanted = { slots: slots, note: note, keepView: !!keepView }; return "ok"; }
         var L = Model.sheetLayout(slots, root.layoutOptions());
         if (!Model.needsSheet(slots)) {
-            root.commitSlots(slots, L, slots[0].source, note);
+            root.commitSlots(slots, L, slots[0].source, note, keepView);
             return "ok";
         }
         var args = Model.sheetArgs(slots, L);
-        sheetProc.pending = { slots: slots, layout: L, note: note,
+        sheetProc.pending = { slots: slots, layout: L, note: note, keepView: !!keepView,
                               dest: root.scratchDir + "/" + Model.sheetName(args) };
         sheetProc.command = ["bash", root.pluginDir + "bin/postcard-sheet", sheetProc.pending.dest].concat(args);
         sheetProc.running = true;
         return "ok";
     }
 
-    function commitSlots(slots, L, path, note) {
+    function commitSlots(slots, L, path, note, keepView) {
         // An edge color can arrive while the sheet is still being composed,
         // before its shot is on the document at all.
         slots = slots.map(function (s) {
@@ -507,7 +519,7 @@ Item {
         loadShot(path, true);
         // Undo is about the marks; stepping back past a change of layout
         // would put them where the shots no longer are.
-        doc.resetHistory();
+        doc.resetHistory(keepView);
         if (note) editor.statusText = note + (gone > 0 ? "  \u00b7  " + Model.plural(gone, "annotation") + " dropped" : "");
     }
 
@@ -520,11 +532,11 @@ Item {
                 if (text.trim() !== "ok") {
                     editor.statusText = text.trim().length ? text.trim() : "Could not lay the shots out";
                 } else {
-                    root.commitSlots(p.slots, p.layout, p.dest, p.note);
+                    root.commitSlots(p.slots, p.layout, p.dest, p.note, p.keepView);
                 }
                 var next = root.slotsWanted;
                 root.slotsWanted = null;
-                if (next) root.applySlots(next.slots, next.note);
+                if (next) root.applySlots(next.slots, next.note, next.keepView);
             }
         }
     }
@@ -534,7 +546,7 @@ Item {
     Timer {
         id: relayout
         interval: 250
-        onTriggered: if (doc.shotCount > 1) root.applySlots(doc.slots, "")
+        onTriggered: if (doc.shotCount > 1) root.applySlots(doc.slots, "", true)
     }
     Connections {
         target: doc
@@ -619,7 +631,7 @@ Item {
         if (i < 0 || j < 0 || j >= doc.shotCount) return "no move";
         var s = doc.slots.slice();
         s.splice(j, 0, s.splice(i, 1)[0]);
-        return applySlots(s, "");
+        return applySlots(s, "", true);
     }
 
     function uncropSlot(id) {
@@ -912,8 +924,13 @@ Item {
                 try { list = JSON.parse(text); } catch (e) { list = []; }
                 if (!Array.isArray(list)) list = [];
                 root.recents = list.map(function (o) {
-                    var c = Model.cleanRecent(Model.migrateConfig("recent", o).data);
-                    if (c) { c.thumb = o.thumb ? String(o.thumb) : ""; c.dir = String(o.dir || ""); }
+                    var m = Model.migrateConfig("recent", o);
+                    var c = Model.cleanRecent(m.data);
+                    if (c) {
+                        c.thumb = o.thumb ? String(o.thumb) : "";
+                        c.dir = String(o.dir || "");
+                        c.tooNew = !!m.tooNew;
+                    }
                     return c;
                 }).filter(function (c) { return c !== null; });
             }
@@ -930,13 +947,17 @@ Item {
         var id = doc.recentId || Model.newGradientId();
         var entry = root.recentDir + "/" + id;
         var copies = [], args = [];
-        doc.slots.forEach(function (s, i) {
-            var dest = s.source.indexOf(entry + "/") === 0 ? s.source
-                     : entry + "/" + Model.recentSourceName(i, s.source);
+        // Every shot is named, the ones already in the entry too, so the
+        // script can tell which copies the card no longer uses.
+        doc.slots.forEach(function (s) {
+            var inEntry = s.source.indexOf(entry + "/") === 0;
+            var name = inEntry ? s.source.slice(entry.length + 1) : Model.recentSourceName(s.id, s.source);
+            var dest = entry + "/" + name;
             copies.push(Object.assign({}, s, { source: dest }));
-            if (dest !== s.source) args.push(s.source, Model.recentSourceName(i, s.source));
+            args.push(s.source, name);
         });
         recordProc.id = id;
+        recordProc.gen = doc.cardGen;
         recordProc.copies = copies;
         recordProc.input = JSON.stringify(Model.configFile("recent", Model.recentDocument(doc, id, copies)));
         recordProc.command = ["bash", root.pluginDir + "bin/postcard-recent", "record", root.recentDir,
@@ -947,6 +968,7 @@ Item {
     Process {
         id: recordProc
         property string id: ""
+        property int gen: 0
         property var copies: []
         property string input: ""
         stdinEnabled: true
@@ -956,7 +978,9 @@ Item {
         }
         stdout: StdioCollector {
             onStreamFinished: {
-                if (text.trim() === "ok") {
+                // The document may be another card by now: a capture, a
+                // reopened card or a plain open came in while this ran.
+                if (text.trim() === "ok" && doc.cardGen === recordProc.gen) {
                     doc.recentId = recordProc.id;
                     // The document now reads its shots from the copies. The
                     // picture on show is the first file itself when there is
@@ -973,6 +997,8 @@ Item {
                             }
                         }
                     }
+                    root.listRecents();
+                } else if (text.trim() === "ok") {
                     root.listRecents();
                 } else if (text.trim().length) {
                     console.warn("postcard: recent card not kept: " + text.trim());
@@ -1003,13 +1029,16 @@ Item {
         doc.tool = "select";
         doc.applyStyle(entry.style);
         doc.activePreset = Model.findPreset(doc.presets, entry.activePreset) ? entry.activePreset : Model.DEFAULT_PRESET;
-        doc.recentId = entry.id;
+        // One written by a newer build is read and left alone: recording
+        // this card again starts an entry of its own.
+        var keep = entry.tooNew ? "" : entry.id;
+        doc.recentId = keep;
         doc.textSize = entry.textSize;
         if (entry.kind === "code") {
             root.loadCode(entry.codeText);
             doc.codeLang = entry.codeLang;
             doc.frameTitle = entry.frameTitle;
-            doc.recentId = entry.id;
+            doc.recentId = keep;
             doc.replaceAnnotations(entry.marks);
             doc.resetHistory();
             editor.statusText = "Reopened " + entry.title;

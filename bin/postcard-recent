@@ -7,7 +7,9 @@
 # doc.json with the layout, style and marks, and thumb.png. `record` writes
 # one entry and prunes the oldest beyond the limit; `thumb` is an image to
 # make the thumbnail from, or "" to keep the one there (or make one from the
-# first shot). Each <src> <name> pair is a shot to copy in under that name.
+# first shot). Each <src> <name> pair is a shot the card uses, copied in under
+# that name unless it is already there; any other shot in the entry is one the
+# card stopped using, and goes.
 set -uo pipefail
 
 action="${1:-list}"
@@ -52,13 +54,20 @@ case "$action" in
     # The shots, unless already in place: the same card recorded again has
     # them from last time.
     first=""
+    declare -A used=()
     while [ "$#" -ge 2 ]; do
       src="$1" name="$2"; shift 2
       dest="$entry/$name"
+      used["$name"]=1
       [ -z "$first" ] && first="$dest"
       [ "$src" = "$dest" ] && continue
       if [ -f "$dest" ] && [ "$(stat -c %s "$dest")" = "$(stat -c %s "$src" 2>/dev/null)" ]; then continue; fi
       cp -f "$src" "$dest" 2>/dev/null || { echo "Could not copy $(basename "$src")"; exit 1; }
+    done
+    for f in "$entry"/*; do
+      name="${f##*/}"
+      case "$name" in doc.json|thumb.png) continue ;; esac
+      [ -f "$f" ] && [ -z "${used[$name]:-}" ] && rm -f -- "$f"
     done
 
     # A small picture for the shelf: the export when there is one, else the
@@ -71,11 +80,12 @@ case "$action" in
     touch "$entry"
 
     # Only the newest few are kept, by the time each was last recorded.
+    # NUL-separated, since a state directory may have spaces in its path.
     n=0
-    for f in $(ls -dt "$dir"/*/ 2>/dev/null); do
+    while IFS= read -r -d '' f; do
       n=$((n + 1))
-      [ "$n" -gt "$limit" ] && rm -rf "$f"
-    done
+      [ "$n" -gt "$limit" ] && rm -rf -- "$f"
+    done < <(find "$dir" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\0' | sort -z -rn | cut -z -f2-)
     echo "ok"
     exit 0
     ;;

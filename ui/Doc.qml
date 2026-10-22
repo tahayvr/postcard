@@ -103,6 +103,9 @@ QtObject {
     // The recent card this document is, once it has been recorded or was
     // reopened from one; "" until then, and again on a new picture.
     property string recentId: ""
+    // Bumped whenever the document becomes another card, so a record that
+    // finishes afterwards can tell its card is gone and keep its id to itself.
+    property int cardGen: 0
     property int stepCounter: 0
     // The size a label was last pulled to, so the next one matches; 0 until
     // then, and a size that suits one shot may not suit the next.
@@ -524,15 +527,16 @@ QtObject {
     }
 
     // The picture as it is now is where undo stops.
-    // Also what the editor takes as a new picture: its zoom goes back to fit.
+    // Also what the editor takes as a new picture: its zoom goes back to fit,
+    // unless keepView says it is the same shots laid out again.
     signal historyReset()
 
-    function resetHistory() {
+    function resetHistory(keepView) {
         settle.stop();
         historyPending = false;
         history = [snapshot()];
         historyAt = 0;
-        historyReset();
+        if (!keepView) historyReset();
     }
 
     function restore(s) {
@@ -591,8 +595,14 @@ QtObject {
         textSize = 0;
         markClipboard = [];
         pasteCount = 0;
-        recentId = "";
+        startCard();
         resetHistory();
+    }
+
+    // A new card from here on: not the recent card that was on show.
+    function startCard() {
+        recentId = "";
+        cardGen += 1;
     }
 
     // Every styling setting back to its default; content and title stay.
