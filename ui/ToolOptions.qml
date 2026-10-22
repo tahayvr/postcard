@@ -13,6 +13,7 @@ Loader {
     id: opts
 
     property var doc
+    property bool hasLastRegion: false
 
     signal captureRequested(string mode)
     signal codeRequested()
@@ -23,7 +24,7 @@ Loader {
     signal eyedropRequested(var done)
     signal addShotRequested(string how)
 
-    readonly property var inkTools: ["arrow", "box", "ellipse", "highlight", "text", "step", "magnify"]
+    readonly property var inkTools: ["arrow", "box", "ellipse", "highlight", "text", "step"]
 
     // The mark in hand, if one is selected: the strip is then about that
     // rather than about the tool, so a mark can be restyled after the fact.
@@ -40,8 +41,14 @@ Loader {
                                          ? opts.picked.style : doc.arrowStyle
     readonly property string textFont: (opts.picked && opts.picked.kind === "text" && opts.picked.font)
                                        ? opts.picked.font : doc.textFont
-    readonly property int zoom: opts.picked && opts.picked.kind === "magnify"
-                                ? opts.picked.zoom : doc.magnifyZoom
+    readonly property string textStyle: (opts.picked && opts.picked.kind === "text")
+                                        ? Model.textStyle(opts.picked) : doc.textStyle
+    readonly property string redactStyle: (opts.picked && opts.picked.kind === "redact")
+                                          ? Model.redactStyle(opts.picked) : doc.redactStyle
+    readonly property bool shapeFill: (opts.picked && (opts.picked.kind === "box" || opts.picked.kind === "ellipse"))
+                                      ? !!opts.picked.fill : doc.shapeFill
+    readonly property real shapeCorner: (opts.picked && opts.picked.kind === "box")
+                                        ? Model.boxRadius(opts.picked, opts.picked.width) : doc.shapeCorner
 
     // Both at once: what is in hand changes, and so does what the next mark
     // will be made with.
@@ -93,75 +100,87 @@ Loader {
 
     Component {
         id: captureComp
+        // Grouped by what they bring in: a screenshot, text, another picture.
         Row {
-            spacing: Ui.gap
-            IconButton { glyph: "\u{F0489}"; label: "Region"; onClicked: opts.captureRequested("region") }
-            IconButton { glyph: "\uf2d0"; label: "Window"; onClicked: opts.captureRequested("windows") }
-
-            // Joined, since the delay belongs to Screen alone: region and
-            // window pickers wait for a click anyway, which closes any menu.
+            spacing: Ui.section
             Row {
+                spacing: Ui.gap
+                IconButton { glyph: "\u{F0489}"; tip: "Capture a region"; onClicked: opts.captureRequested("region") }
+                IconButton { glyph: "\uf2d0"; tip: "Capture a window"; onClicked: opts.captureRequested("windows") }
                 IconButton {
-                    glyph: "\u{F0379}"
-                    label: "Screen"
-                    tip: CaptureDelay.seconds
-                         ? "Capture the whole screen in " + CaptureDelay.seconds + " seconds"
-                         : "Capture the whole screen"
-                    onClicked: opts.captureRequested("fullscreen")
+                    visible: opts.hasLastRegion
+                    glyph: "\uf1da"
+                    tip: "Capture the last region again"
+                    onClicked: opts.captureRequested("last")
                 }
-                Rectangle { width: 1; height: Ui.button; color: Ui.hairline }
-                IconButton {
-                    glyph: "\uf017"
-                    label: CaptureDelay.label(CaptureDelay.seconds)
-                    rest: Ui.fillRaised
-                    active: CaptureDelay.seconds > 0
-                    tip: "Delay before the screen is captured, click to change"
-                    onClicked: CaptureDelay.cycle()
+
+                // Joined, since the delay belongs to Screen alone: region and
+                // window pickers wait for a click anyway, which closes any menu.
+                Row {
+                    IconButton {
+                        glyph: "\u{F0379}"
+                        tip: CaptureDelay.seconds
+                             ? "Capture the whole screen in " + CaptureDelay.seconds + " seconds"
+                             : "Capture the whole screen"
+                        onClicked: opts.captureRequested("fullscreen")
+                    }
+                    Rectangle { width: 1; height: Ui.button; color: Ui.hairline }
+                    IconButton {
+                        label: CaptureDelay.label(CaptureDelay.seconds)
+                        rest: Ui.fillRaised
+                        active: CaptureDelay.seconds > 0
+                        tip: CaptureDelay.seconds
+                             ? "Screen waits " + CaptureDelay.seconds + " seconds, click to change"
+                             : "Screen captures at once, click to add a delay"
+                        onClicked: CaptureDelay.cycle()
+                    }
                 }
             }
-            IconButton { glyph: "\uf121"; label: "Code"; tip: "Selected text as a code card"; onClicked: opts.codeRequested() }
+            IconButton { glyph: "\uf121"; tip: "Selected text as a code card"; onClicked: opts.codeRequested() }
+            Row {
+                spacing: Ui.gap
+                // Another shot beside the one on the card, rather than in its
+                // place like the buttons before it.
+                IconButton {
+                    id: addShot
+                    visible: opts.doc.hasContent && opts.doc.kind === "shot"
+                    glyph: "\uf067"
+                    tip: "Put another shot beside this one"
+                    active: addMenu.opened
+                    onClicked: addMenu.opened ? addMenu.close() : addMenu.open()
 
-            // Another shot beside the one on the card, rather than in its
-            // place like the buttons before it.
-            IconButton {
-                id: addShot
-                visible: opts.doc.hasContent && opts.doc.kind === "shot"
-                glyph: "\uf067"
-                label: "Add"
-                tip: "Put another shot beside this one"
-                active: addMenu.opened
-                onClicked: addMenu.opened ? addMenu.close() : addMenu.open()
-
-                QQC.Popup {
-                    id: addMenu
-                    y: addShot.height + Ui.gap
-                    padding: Ui.gap
-                    focus: true
-                    closePolicy: QQC.Popup.CloseOnEscape | QQC.Popup.CloseOnPressOutside
-                    background: Rectangle {
-                        color: Color.menu && Color.menu.background ? Color.menu.background : Color.background
-                        border.width: 1
-                        border.color: Ui.borderActive
-                    }
-                    Column {
-                        spacing: Ui.gap
-                        Repeater {
-                            model: [{ key: "region", label: "Region" }, { key: "windows", label: "Window" },
-                                    { key: "fullscreen", label: "Screen" }, { key: "file", label: "File" }]
-                            IconButton {
-                                required property var modelData
-                                width: Style.space(110)
-                                label: modelData.label
-                                onClicked: {
-                                    addMenu.close();
-                                    opts.addShotRequested(modelData.key);
+                    QQC.Popup {
+                        id: addMenu
+                        y: addShot.height + Ui.gap
+                        padding: Ui.gap
+                        focus: true
+                        closePolicy: QQC.Popup.CloseOnEscape | QQC.Popup.CloseOnPressOutside
+                        background: Rectangle {
+                            color: Color.menu && Color.menu.background ? Color.menu.background : Color.background
+                            border.width: 1
+                            border.color: Ui.borderActive
+                        }
+                        Column {
+                            spacing: Ui.gap
+                            Repeater {
+                                model: [{ key: "region", label: "Region" }, { key: "windows", label: "Window" }]
+                                       .concat(opts.hasLastRegion ? [{ key: "last", label: "Last region" }] : [])
+                                       .concat([{ key: "fullscreen", label: "Screen" }, { key: "file", label: "File" }])
+                                IconButton {
+                                    required property var modelData
+                                    width: Style.space(110)
+                                    label: modelData.label
+                                    onClicked: {
+                                        addMenu.close();
+                                        opts.addShotRequested(modelData.key);
+                                    }
                                 }
                             }
                         }
                     }
                 }
+                IconButton { glyph: "\uf1c5"; tip: "Open a file"; onClicked: opts.openRequested() }
             }
-            IconButton { glyph: "\uf1c5"; label: "File"; tip: "Open a file"; onClicked: opts.openRequested() }
         }
     }
 
@@ -184,6 +203,57 @@ Loader {
                         onClicked: opts.doc.setTextFont(modelData.key)
                     }
                 }
+            }
+
+            // What a label sits on: outlined glyphs, a cream pill, or nothing.
+            Row {
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Ui.gap
+                visible: opts.subject === "text"
+                Repeater {
+                    model: Model.TEXT_STYLES
+                    IconButton {
+                        required property var modelData
+                        label: modelData.label
+                        tip: modelData.key === "pill" ? "On a cream pill, readable on any picture"
+                           : modelData.key === "plain" ? "Bare glyphs" : "Outlined glyphs"
+                        active: opts.textStyle === modelData.key
+                        onClicked: opts.doc.setTextStyle(modelData.key)
+                    }
+                }
+            }
+
+            // A box or an ellipse can be filled in; only a box has corners.
+            Row {
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Ui.gap
+                visible: opts.subject === "box" || opts.subject === "ellipse"
+                IconButton {
+                    glyph: opts.subject === "ellipse" ? "\u{F0765}" : "\u{F0764}"
+                    tip: opts.shapeFill ? "Filled in, click for an outline" : "Fill it in"
+                    active: opts.shapeFill
+                    onClicked: opts.doc.setShapeFill(!opts.shapeFill)
+                }
+                InlineSlider {
+                    visible: opts.subject === "box"
+                    label: "Corner"
+                    value: opts.shapeCorner
+                    from: 0; to: Model.MAX_CORNER
+                    trackWidth: Style.space(70)
+                    onMoved: function (v) { opts.doc.setShapeCorner(Math.round(v)); }
+                }
+            }
+
+            // A highlight takes the height of the text line it is drawn over,
+            // read off the picture once it is let go.
+            IconButton {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: opts.subject === "highlight" && opts.doc.kind === "shot"
+                glyph: "\u{F0284}"
+                tip: opts.doc.highlightSnap ? "Snapping to the line of text under it, click to draw freely"
+                                            : "Snap to the line of text under it"
+                active: opts.doc.highlightSnap
+                onClicked: opts.doc.highlightSnap = !opts.doc.highlightSnap
             }
 
             // Only arrows have more than one shape to draw.
@@ -277,22 +347,6 @@ Loader {
                 }
             }
 
-            Row {
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: Ui.gap
-                visible: opts.subject === "magnify"
-                Repeater {
-                    model: Model.MAGNIFY_ZOOMS
-                    IconButton {
-                        required property var modelData
-                        label: modelData + "\u00d7"
-                        tip: "Zoom " + modelData + " times"
-                        active: opts.zoom === modelData
-                        onClicked: opts.doc.setMagnifyZoom(modelData)
-                    }
-                }
-            }
-
             InlineSlider {
                 // Neither a step badge nor a label has a stroke; both are
                 // sized by the handles on them.
@@ -315,16 +369,54 @@ Loader {
                 spacing: Ui.gap
                 IconButton {
                     glyph: "\u{F0763}"
-                    label: "Rectangle"
+                    tip: "Rectangular spotlight"
                     active: opts.doc.spotShape === "rect"
                     onClicked: opts.doc.spotShape = "rect"
                 }
                 IconButton {
+                    glyph: "\u{F14FC}"
+                    tip: "Rounded spotlight"
+                    active: opts.doc.spotShape === "rounded"
+                    onClicked: opts.doc.spotShape = "rounded"
+                }
+                IconButton {
                     glyph: "\u{F0766}"
-                    label: "Ellipse"
+                    tip: "Round spotlight"
                     active: opts.doc.spotShape === "ellipse"
                     onClicked: opts.doc.spotShape = "ellipse"
                 }
+            }
+
+            // Magnifying, each spotlight shows what is under its middle at
+            // that zoom, in its own place: there is no second lens to set.
+            Row {
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Ui.gap
+                IconButton {
+                    glyph: "\uf00e"
+                    tip: opts.doc.spotZoom > 1 ? "Magnifying what is under each spotlight, click to stop"
+                                               : "Magnify what is under each spotlight"
+                    active: opts.doc.spotZoom > 1
+                    onClicked: opts.doc.spotZoom = opts.doc.spotZoom > 1 ? 1 : Model.SPOT_ZOOMS[0]
+                }
+                Repeater {
+                    model: opts.doc.spotZoom > 1 ? Model.SPOT_ZOOMS : []
+                    IconButton {
+                        required property var modelData
+                        label: modelData + "\u00d7"
+                        tip: "Zoom " + modelData + " times"
+                        active: opts.doc.spotZoom === modelData
+                        onClicked: opts.doc.spotZoom = modelData
+                    }
+                }
+            }
+
+            IconButton {
+                anchors.verticalCenter: parent.verticalCenter
+                glyph: "\u{F00CE}"
+                tip: opts.doc.spotRing ? "Ring around each spotlight, click to remove" : "Add a ring around each spotlight"
+                active: opts.doc.spotRing
+                onClicked: opts.doc.spotRing = !opts.doc.spotRing
             }
 
             InlineSlider {
@@ -354,7 +446,6 @@ Loader {
 
             IconButton {
                 glyph: "\uf125"
-                label: "Crop"
                 primary: opts.doc.cropUsable
                 enabled: opts.doc.cropUsable
                 tip: "Keep the selection (Enter)"
@@ -364,7 +455,6 @@ Loader {
             IconButton {
                 visible: opts.doc.cropped
                 glyph: "\u{F0293}"
-                label: "Whole picture"
                 tip: "Back to the picture as it came in"
                 onClicked: opts.uncropRequested()
             }
@@ -376,12 +466,31 @@ Loader {
         Row {
             spacing: Ui.gap
 
+            // Blocks or a flat fill, for the next hidden area and the one in
+            // hand.
+            Row {
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Ui.gap
+                Repeater {
+                    model: Model.REDACT_STYLES
+                    IconButton {
+                        required property var modelData
+                        label: modelData.label
+                        tip: modelData.key === "solid" ? "A flat block that leaks nothing, not even a word's shape"
+                                                       : "One color per block"
+                        active: opts.redactStyle === modelData.key
+                        onClicked: opts.doc.setRedactStyle(modelData.key)
+                    }
+                }
+            }
+            Rectangle { width: 1; height: Ui.button; color: Ui.hairline; anchors.verticalCenter: parent.verticalCenter }
+
             // OCR has no text to find on a code card, so there only the
             // manual blocks are on offer.
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 visible: opts.doc.kind !== "shot"
-                text: "Drag over anything to pixelate it"
+                text: "Drag over anything to hide it"
                 color: Ui.textMuted
                 font.family: Style.font.family
                 font.pixelSize: Style.font.bodySmall
@@ -406,8 +515,7 @@ Loader {
             IconButton {
                 visible: opts.doc.kind === "shot"
                 glyph: "\u{F00B5}"
-                label: "Find and hide"
-                tip: "Pixelate everything the classes above match"
+                tip: "Find and hide: pixelate everything the classes beside it match"
                 onClicked: opts.autoRedactRequested()
             }
         }

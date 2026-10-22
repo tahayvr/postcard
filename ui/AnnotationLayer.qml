@@ -11,8 +11,6 @@ Item {
 
     property var doc: null
     property Item pixelSource: null
-    // The shot with hidden areas already pixelated, for a magnifier to show.
-    property Item magnifySource: null
     // The live editor, as against the export or the bar widget's preview.
     property bool interactive: false
     // With the move tool every mark is there to be taken. With a tool that
@@ -25,6 +23,14 @@ Item {
                                      && anno.doc.tool !== "crop"
 
     property real viewScale: 1
+    // Whether a pointer event's modifiers mean anything yet: a hotkey with
+    // Shift in it leaves Shift reported held after the overlay takes focus,
+    // until the overlay has seen a key event of its own (the editor says).
+    property bool modifiersTrusted: true
+
+    function shiftHeld(mods) {
+        return anno.modifiersTrusted && (mods & Qt.ShiftModifier) !== 0;
+    }
 
     // Screen sizes, so they stay put however far the picture is scaled down.
     readonly property real hairline: Math.max(1, 1.5 / anno.viewScale)
@@ -66,9 +72,7 @@ Item {
             // Everything but a line is selected in a frame with white corners,
             // and where it has sides, resized from anywhere along one.
             readonly property bool framed: a.kind !== "arrow"
-            // A lens is framed a little further out than the rest, clear of
-            // its ring.
-            readonly property real frameGap: a.kind === "magnify" ? 3 / anno.viewScale : anno.frameGap
+            readonly property real frameGap: anno.frameGap
             readonly property real frameOut: entry.frameGap + anno.px / 2
 
             // A label is as big as its text, which only this delegate knows:
@@ -121,7 +125,6 @@ Item {
                     case "highlight": return highlightComp;
                     case "text":      return textComp;
                     case "step":      return stepComp;
-                    case "magnify":   return magnifyComp;
                     // The dim is one layer under every annotation, so a
                     // spotlight has nothing of its own to draw here.
                     case "spotlight": return null;
@@ -133,10 +136,10 @@ Item {
             Component {
                 id: boxComp
                 Rectangle {
-                    color: "transparent"
+                    color: entry.a.fill ? entry.ink : "transparent"
                     border.color: entry.ink
-                    border.width: entry.stroke
-                    radius: entry.stroke * 1.5
+                    border.width: entry.a.fill ? 0 : entry.stroke
+                    radius: Model.boxRadius(entry.a, entry.stroke)
                     antialiasing: true
                 }
             }
@@ -156,15 +159,15 @@ Item {
                     anchors.fill: parent
                     preferredRendererType: Shape.CurveRenderer
                     ShapePath {
-                        strokeColor: entry.ink
-                        strokeWidth: entry.stroke
-                        fillColor: "transparent"
+                        strokeColor: entry.a.fill ? "transparent" : entry.ink
+                        strokeWidth: entry.a.fill ? -1 : entry.stroke
+                        fillColor: entry.a.fill ? entry.ink : "transparent"
                         capStyle: ShapePath.RoundCap
                         PathAngleArc {
                             centerX: ell.width / 2
                             centerY: ell.height / 2
-                            radiusX: Math.max(1, ell.width / 2 - entry.stroke / 2)
-                            radiusY: Math.max(1, ell.height / 2 - entry.stroke / 2)
+                            radiusX: Math.max(1, ell.width / 2 - (entry.a.fill ? 0 : entry.stroke / 2))
+                            radiusY: Math.max(1, ell.height / 2 - (entry.a.fill ? 0 : entry.stroke / 2))
                             startAngle: 0
                             sweepAngle: 360
                         }
@@ -242,123 +245,47 @@ Item {
                     source: anno.pixelSource
                     area: Qt.rect(entry.x, entry.y, entry.width, entry.height)
                     block: entry.a.strength
-                }
-            }
-
-            // The lens is this item's box; the area it shows and the line to it
-            // are drawn outside it. Measured from where the lens is now rather
-            // than where the model has it, so while the lens is dragged the
-            // area stays put and the line follows.
-            Component {
-                id: magnifyComp
-                Item {
-                    id: mag
-                    readonly property real lensR: entry.width / 2
-                    readonly property real power: Model.magnifyZoom(entry.a.zoom)
-                    readonly property real srcR: mag.lensR / mag.power
-                    readonly property real srcX: entry.a.sx - entry.x
-                    readonly property real srcY: entry.a.sy - entry.y
-                    readonly property var link: Model.magnifyLink(mag.lensR, mag.lensR, mag.lensR,
-                                                                  mag.srcX, mag.srcY, mag.srcR)
-
-                    Shape {
-                        preferredRendererType: Shape.CurveRenderer
-                        // A ShapePath cannot be hidden, so a line that is not
-                        // wanted is stroked with nothing.
-                        ShapePath {
-                            strokeColor: mag.link ? entry.ink : "transparent"
-                            strokeWidth: entry.stroke
-                            capStyle: ShapePath.RoundCap
-                            fillColor: "transparent"
-                            startX: mag.link ? mag.link.x1 : 0
-                            startY: mag.link ? mag.link.y1 : 0
-                            PathLine {
-                                x: mag.link ? mag.link.x2 : 0
-                                y: mag.link ? mag.link.y2 : 0
-                            }
-                        }
-                        ShapePath {
-                            strokeColor: entry.ink
-                            strokeWidth: entry.stroke
-                            fillColor: "transparent"
-                            PathAngleArc {
-                                centerX: mag.srcX
-                                centerY: mag.srcY
-                                radiusX: Math.max(1, mag.srcR)
-                                radiusY: Math.max(1, mag.srcR)
-                                startAngle: 0
-                                sweepAngle: 360
-                            }
-                        }
-                    }
-
-                    // One texel per shot pixel, scaled up unsmoothed: each
-                    // pixel becomes a clean block rather than a blur.
-                    ShaderEffectSource {
-                        id: lensTexture
-                        visible: false
-                        width: entry.width
-                        height: entry.height
-                        sourceItem: anno.magnifySource
-                        sourceRect: Qt.rect(entry.a.sx - mag.srcR, entry.a.sy - mag.srcR,
-                                            mag.srcR * 2, mag.srcR * 2)
-                        textureSize: Qt.size(Math.max(1, Math.round(mag.srcR * 2)),
-                                             Math.max(1, Math.round(mag.srcR * 2)))
-                        smooth: false
-                        live: true
-                    }
-
-                    // assets/shaders/lens.frag stretches the texture over the
-                    // lens and cuts the circle. A Shape filled with it mapped
-                    // the texture at a scale that followed the layer's
-                    // transform, and a layer mask would resample it.
-                    ShaderEffect {
-                        anchors.fill: parent
-                        visible: anno.magnifySource !== null
-                        property variant source: lensTexture
-                        // About a pixel and a half of fade at the rim.
-                        property real edge: Math.min(0.5, 1.5 / Math.max(1, mag.lensR))
-                        fragmentShader: Qt.resolvedUrl("../assets/shaders/lens.frag.qsb")
-                    }
-
-                    Shape {
-                        anchors.fill: parent
-                        preferredRendererType: Shape.CurveRenderer
-                        ShapePath {
-                            strokeColor: entry.ink
-                            strokeWidth: entry.stroke
-                            fillColor: anno.magnifySource ? "transparent" : "#1a1a1a"
-                            PathAngleArc {
-                                centerX: mag.lensR
-                                centerY: mag.lensR
-                                radiusX: Math.max(1, mag.lensR - entry.stroke / 2)
-                                radiusY: Math.max(1, mag.lensR - entry.stroke / 2)
-                                startAngle: 0
-                                sweepAngle: 360
-                            }
-                        }
-                    }
+                    solid: Model.redactStyle(entry.a) === "solid"
                 }
             }
 
             Component {
                 id: textComp
                 Item {
-                    readonly property real pad: label.font.pixelSize / 6
-                    implicitWidth: label.implicitWidth + pad * 2
-                    implicitHeight: label.implicitHeight + pad
+                    id: textBox
+                    readonly property string backing: Model.textStyle(entry.a)
+                    // A pill needs room around the glyphs; the other two sit
+                    // closer, as labels always have.
+                    readonly property real pad: label.font.pixelSize / (textBox.backing === "pill" ? 4 : 6)
+                    // Dragged out to a width, the label wraps inside it; clicked
+                    // down, it is as wide as its text.
+                    readonly property bool wraps: entry.a.w > 0
+                    implicitWidth: wraps ? entry.a.w : label.implicitWidth + pad * 2
+                    implicitHeight: label.implicitHeight + pad * (textBox.backing === "pill" ? 2 : 1)
+
+                    // A cream pill under the glyphs reads on any picture.
+                    Rectangle {
+                        anchors.fill: parent
+                        visible: textBox.backing === "pill"
+                        color: Model.PILL_COLOR
+                        radius: Math.min(height / 4, textBox.pad * 1.5)
+                    }
                     Text {
                         id: label
-                        x: parent.pad
-                        y: parent.pad / 2
+                        x: textBox.pad
+                        y: textBox.backing === "pill" ? textBox.pad : textBox.pad / 2
+                        width: textBox.wraps ? Math.max(1, entry.a.w - textBox.pad * 2) : implicitWidth
+                        wrapMode: textBox.wraps ? Text.Wrap : Text.NoWrap
                         readonly property bool placeholder: entry.a.text === ""
                         text: placeholder ? (anno.doc.exporting ? "" : "Type…") : entry.a.text
+                        // What was typed, as it was typed: a label is not markup.
+                        textFormat: Text.PlainText
                         color: entry.ink
                         opacity: placeholder ? 0.55 : 1
                         font.pixelSize: Math.round(Model.textSize(entry.a))
                         font.family: Model.textFamily(entry.a.font)
                         font.bold: true
-                        style: Text.Outline
+                        style: textBox.backing === "outline" ? Text.Outline : Text.Normal
                         styleColor: Qt.rgba(0, 0, 0, 0.55)
                     }
                 }
@@ -463,7 +390,7 @@ Item {
                         e.accepted = false;
                         return;
                     }
-                    hold.toggling = anno.moving && (e.modifiers & Qt.ShiftModifier);
+                    hold.toggling = anno.moving && anno.shiftHeld(e.modifiers);
                     if (hold.toggling) {
                         anno.doc.toggleSelected(entry.a.uid);
                         return;
@@ -501,52 +428,6 @@ Item {
                 }
             }
 
-            // A press inside a magnifier's area moves the area, and the lens
-            // with it so it stays beside what it shows. Above the handles: the
-            // lens is set diagonally from the area, so one of its corners
-            // lands on the area, and the area has to win there.
-            MouseArea {
-                id: sourceGrab
-                z: 1
-                readonly property real r: entry.a.kind === "magnify"
-                                          ? Model.magnifySource(entry.a).r : 0
-                // Never too small to take hold of on screen.
-                readonly property real reach: Math.max(sourceGrab.r, anno.slop)
-                readonly property bool inside: sourceGrab.within(sourceGrab.mouseX, sourceGrab.mouseY)
-                function within(x, y) {
-                    var dx = x - sourceGrab.reach, dy = y - sourceGrab.reach;
-                    return dx * dx + dy * dy <= sourceGrab.reach * sourceGrab.reach;
-                }
-                visible: entry.a.kind === "magnify"
-                enabled: visible && entry.grabbable
-                hoverEnabled: enabled
-                x: entry.a.sx - entry.x - sourceGrab.reach
-                y: entry.a.sy - entry.y - sourceGrab.reach
-                width: sourceGrab.reach * 2
-                height: sourceGrab.reach * 2
-                cursorShape: !sourceGrab.inside ? Qt.ArrowCursor
-                           : sourceGrab.pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
-                property var from: null
-                property point at: Qt.point(0, 0)
-
-                onPressed: function (e) {
-                    if (!sourceGrab.within(e.x, e.y)) { e.accepted = false; return; }
-                    sourceGrab.at = mapToItem(anno, e.x, e.y);
-                    sourceGrab.from = { x: entry.a.x, y: entry.a.y, w: entry.a.w, h: entry.a.h,
-                                        sx: entry.a.sx, sy: entry.a.sy };
-                    anno.doc.selectedId = entry.a.uid;
-                }
-                onPositionChanged: function (e) {
-                    if (!pressed || !sourceGrab.from) return;
-                    var p = mapToItem(anno, e.x, e.y);
-                    // Whole pixels, so the area still starts on one.
-                    anno.doc.updateAnnotation(entry.a.uid, Model.moveMagnifierArea(sourceGrab.from,
-                        Math.round(p.x - sourceGrab.at.x), Math.round(p.y - sourceGrab.at.y),
-                        anno.doc.pictureArea));
-                }
-                onReleased: anno.doc.annotationsEdited()
-            }
-
             // A mark's sides are pulled from anywhere along the frame, outside
             // the stroke, which is left to moving it. The corner handles are
             // laid over the ends of these.
@@ -560,8 +441,8 @@ Item {
                     property real offX: 0
                     property real offY: 0
 
-                    visible: Model.hasSides(entry.a.kind) && anno.editable && entry.alone
-                             && !anno.doc.exporting
+                    visible: Model.sideHandles(entry.a).indexOf(edge.modelData) !== -1
+                             && anno.editable && entry.alone && !anno.doc.exporting
                     enabled: edge.visible
                     x: edge.modelData === "r" ? entry.width : edge.modelData === "l" ? -edge.reach : 0
                     y: edge.modelData === "b" ? entry.height : edge.modelData === "t" ? -edge.reach : 0
@@ -617,6 +498,12 @@ Item {
                         : knob.spot.key.indexOf("b") !== -1 ? entry.frameOut : 0
                     property real offX: 0
                     property real offY: 0
+                    // Where the corner and its opposite were when taken, for a
+                    // Shift pull that keeps the proportions.
+                    property point fixed: Qt.point(0, 0)
+                    property point taken: Qt.point(0, 0)
+                    readonly property bool keepsShape: entry.framed && entry.a.kind !== "text"
+                                                       && entry.a.kind !== "step"
 
                     visible: knob.spot !== null && !knob.side && anno.editable && entry.alone
                              && !anno.doc.exporting
@@ -648,12 +535,24 @@ Item {
                             var p = mapToItem(anno, e.x, e.y);
                             knob.offX = knob.spot ? p.x - knob.spot.x : 0;
                             knob.offY = knob.spot ? p.y - knob.spot.y : 0;
+                            if (knob.spot && knob.keepsShape) {
+                                var o = Model.oppositeCorner(entry.a, knob.spot.key);
+                                knob.fixed = Qt.point(o.x, o.y);
+                                knob.taken = Qt.point(knob.spot.x, knob.spot.y);
+                            }
                         }
                         onPositionChanged: function (e) {
                             if (!pressed || !knob.spot) return;
                             var p = mapToItem(anno, e.x, e.y);
                             // Held to the picture, wherever the pointer goes.
                             var q = Model.clampToArea(p.x - knob.offX, p.y - knob.offY, anno.doc.pictureArea);
+                            // With Shift the mark keeps its proportions; locked
+                            // after the clamp, then clamped again, so it stays
+                            // inside whichever way the pointer strays.
+                            if (knob.keepsShape && anno.shiftHeld(e.modifiers)) {
+                                var l = Model.aspectLockedPoint(knob.fixed, knob.taken, q);
+                                q = Model.clampToArea(l.x, l.y, anno.doc.pictureArea);
+                            }
                             // By uid, and through the document, which tells
                             // everything drawn from the model that it moved.
                             anno.doc.updateAnnotation(entry.a.uid,

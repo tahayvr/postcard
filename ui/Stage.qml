@@ -13,6 +13,8 @@ Item {
     // size on screen. The grab wrapper holds the viewport's fit, so this
     // cannot be read off the stage's own scale.
     property real viewScale: 1
+    // Whether Shift on a handle means Shift yet (see Editor.modifiersTrusted).
+    property bool modifiersTrusted: true
     readonly property var geo: doc.geo
     readonly property bool codeKind: doc.kind === "code"
 
@@ -378,8 +380,9 @@ Item {
         CodeBlock { doc: stage.doc }
     }
 
-    // What a magnifier looks through: the shot with every hidden area already
-    // pixelated, so a lens over one shows the blocks and not what they cover.
+    // What a magnifying spotlight looks through: the shot with every hidden
+    // area already pixelated, so one over it shows the blocks and not what
+    // they cover.
     // Drawn 1:1 in shot pixels; the texture size is set, or it would follow
     // the screen's scale and resample.
     Item {
@@ -407,6 +410,7 @@ Item {
                 source: stage.codeKind ? codeSource : pixelSource
                 area: Qt.rect(x, y, width, height)
                 block: model.strength
+                solid: Model.redactStyle(model) === "solid"
             }
         }
     }
@@ -420,6 +424,7 @@ Item {
         bottomRadius: stage.cardRadiusPx
         outlines: stage.doc.shotCount > 1 && stage.doc.sheet
                   ? Model.spotlightOutlines(stage.doc.sheet, topRadius, bottomRadius) : null
+        lensSource: lensSource
         x: stage.geo.cardX * stage.unit
         y: (stage.geo.cardY + stage.geo.chromeH) * stage.unit
         width: Math.max(1, stage.geo.cardW)
@@ -432,8 +437,8 @@ Item {
     AnnotationLayer {
         doc: stage.doc
         pixelSource: stage.codeKind ? codeSource : pixelSource
-        magnifySource: lensSource
         interactive: stage.interactive && !stage.doc.exporting
+        modifiersTrusted: stage.modifiersTrusted
         viewScale: stage.viewScale * stage.unit
         x: (stage.geo.cardX + stage.geo.inset) * stage.unit
         y: (stage.geo.cardY + stage.geo.chromeH + stage.geo.inset) * stage.unit

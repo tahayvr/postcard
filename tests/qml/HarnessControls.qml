@@ -361,40 +361,6 @@ Window {
         doc.bgMode = "auto";
         doc.bgGradient = "dusk";
 
-        // ---- magnifier -----------------------------------------------------
-        doc.clearAnnotations();
-        doc.shotWidth = 800;
-        doc.shotHeight = 400;
-        var mag = Model.newAnnotation("magnify", 0, 0);
-        var drawn = Model.magnifyFromDrag(380, 180, 420, 220, 2);
-        for (var mk in drawn) mag[mk] = drawn[mk];
-        mag.zoom = 2;
-        doc.addAnnotation(mag);
-        editor.finishMagnifier(mag.uid);
-        var placed = doc.selectedAnnotation();
-        var link = Model.magnifyLink(placed.x + placed.w / 2, placed.y + placed.h / 2, placed.w / 2,
-                                     placed.sx, placed.sy, placed.w / 2 / placed.zoom);
-        win.check("letting go sets the lens beside what it shows", link !== null, true);
-        win.check("still showing the middle of the drag", placed.sx + "," + placed.sy, "400,200");
-
-        doc.setMagnifyZoom(4);
-        placed = doc.selectedAnnotation();
-        win.check("the zoom buttons change the one in hand", placed.zoom + " " + placed.w, "4 80");
-        win.check("and the next one", doc.magnifyZoom, 4);
-        doc.setMagnifyZoom(2);
-
-        doc.shiftAnnotations(-100, -50);
-        placed = doc.selectedAnnotation();
-        win.check("a crop moves what it shows along with the picture", placed.sx + "," + placed.sy, "300,150");
-
-        var stray = Model.newAnnotation("magnify", 0, 0);
-        var small = Model.magnifyFromDrag(100, 100, 104, 103, 2);
-        for (var sk in small) stray[sk] = small[sk];
-        doc.addAnnotation(stray);
-        editor.finishMagnifier(stray.uid);
-        win.check("a stray drag leaves no magnifier", doc.indexOfId(stray.uid), -1);
-        doc.clearAnnotations();
-
         // ---- crop handles --------------------------------------------------
         doc.shotWidth = 400;
         doc.shotHeight = 200;
@@ -483,6 +449,97 @@ Window {
         editor.drawMove(100, 80, false);
         win.check("an annotation is not resized by a hover",
                   doc.annotations.get(0).w, 0);
+
+        // ---- shift and alt while drawing ------------------------------------
+        // The press, the moves and the release by hand, with the modifiers
+        // the surface would have read off the pointer.
+        doc.clearAnnotations();
+        doc.shapeFill = true; doc.shapeCorner = 12;
+        var u = editor.beginDraw(10, 10);
+        editor.drawMove(110, 50, true, 0);
+        win.check("a plain drag is as wide and tall as the pointer went",
+                  doc.annotations.get(0).w + "x" + doc.annotations.get(0).h, "100x40");
+        win.check("and takes the fill and corners in hand", doc.annotations.get(0).fill + " " + doc.annotations.get(0).corner, "true 12");
+        editor.drawMove(110, 50, true, Qt.ShiftModifier);
+        win.check("with shift it is a square of the smaller extent",
+                  doc.annotations.get(0).w + "x" + doc.annotations.get(0).h, "40x40");
+        // The picture starts a padding's worth left of the shot: squared to
+        // 90, clamped to the picture's edge on the left, squared again.
+        var reach = Math.round(10 - doc.pictureArea.x);
+        editor.drawMove(-80, 200, true, Qt.ShiftModifier);
+        win.check("squared after the clamp, so it stays inside the picture",
+                  doc.annotations.get(0).w + "x" + doc.annotations.get(0).h, "-" + reach + "x" + reach);
+        editor.finishDraw(u);
+        doc.shapeFill = false; doc.shapeCorner = Model.DEFAULT_CORNER;
+
+        doc.clearAnnotations();
+        u = editor.beginDraw(100, 100);
+        editor.drawMove(130, 120, true, Qt.AltModifier);
+        win.check("with alt the press is the middle",
+                  win.rectText({ x: doc.annotations.get(0).x, y: doc.annotations.get(0).y,
+                                 width: doc.annotations.get(0).w, height: doc.annotations.get(0).h }), "70,80 60x40");
+        editor.drawMove(130, 120, true, Qt.AltModifier | Qt.ShiftModifier);
+        win.check("and with shift too, a square about it",
+                  win.rectText({ x: doc.annotations.get(0).x, y: doc.annotations.get(0).y,
+                                 width: doc.annotations.get(0).w, height: doc.annotations.get(0).h }), "80,80 40x40");
+        editor.drawMove(130, 120, true, 0);
+        win.check("letting go of alt puts the press back at the corner",
+                  win.rectText({ x: doc.annotations.get(0).x, y: doc.annotations.get(0).y,
+                                 width: doc.annotations.get(0).w, height: doc.annotations.get(0).h }), "100,100 30x20");
+        editor.finishDraw(u);
+
+        doc.tool = "arrow";
+        doc.clearAnnotations();
+        u = editor.beginDraw(50, 50);
+        editor.drawMove(150, 60, true, Qt.ShiftModifier);
+        win.check("an arrow with shift is held flat", Math.round(doc.annotations.get(0).h), 0);
+        editor.finishDraw(u);
+
+        // A click with the text tool is a line; a drag is a box to wrap in.
+        doc.tool = "text";
+        doc.clearAnnotations();
+        u = editor.beginDraw(20, 20);
+        editor.drawMove(30, 25, true, 0);
+        editor.finishDraw(u);
+        win.check("a short text drag is a click: a single line", doc.annotations.get(0).w, 0);
+        win.check("and the tool goes back to move", doc.tool, "select");
+        // Typed into, or the next label would take its place: a label with
+        // nothing in it goes when the selection moves on.
+        doc.updateAnnotation(u, { text: "one" });
+        doc.tool = "text";
+        u = editor.beginDraw(20, 60);
+        editor.drawMove(220, 70, true, 0);
+        editor.finishDraw(u);
+        doc.updateAnnotation(u, { text: "two" });
+        win.check("a long one is the width to wrap at", doc.annotations.get(1).w, 200);
+        win.check("carrying the style for the next label", doc.annotations.get(1).textStyle, doc.textStyle);
+        // Dragged past the card, the width stops at the picture's edge.
+        doc.tool = "text";
+        u = editor.beginDraw(300, 100);
+        editor.drawMove(5000, 110, true, 0);
+        editor.finishDraw(u);
+        doc.updateAnnotation(u, { text: "three" });
+        win.check("a text drag stops at the picture's edge",
+                  Math.round(doc.annotations.get(2).w), Math.round(doc.pictureArea.x + doc.pictureArea.w - 300));
+
+        // A highlight let go asks for the text row under its middle.
+        var asked = "";
+        editor.snapRequested.connect(function (uid, x, y) { asked = uid + " " + x + " " + y; });
+        doc.tool = "highlight";
+        doc.clearAnnotations();
+        doc.kind = "shot";
+        u = editor.beginDraw(10, 10);
+        editor.drawMove(110, 50, true, 0);
+        editor.finishDraw(u);
+        win.check("a highlight asks for the row under its middle", asked, u + " 60 30");
+        asked = "";
+        doc.highlightSnap = false;
+        u = editor.beginDraw(10, 10);
+        editor.drawMove(110, 50, true, 0);
+        editor.finishDraw(u);
+        win.check("not when snapping is off", asked, "");
+        doc.highlightSnap = true;
+        doc.tool = "box";
 
         // ---- what a crop cuts away -----------------------------------------
         doc.clearAnnotations();
@@ -797,6 +854,66 @@ Window {
         win.check("resized", r.x + "," + r.y + " " + r.w + "x" + r.h, "60,70 80x90");
         win.check("still the same kind of mark", r.kind, "box");
         win.check("and the same color", String(r.color), "#123456");
+
+        // ---- zoom and pan --------------------------------------------------
+        // The view magnifies over the fit; the shot point under the pointer
+        // has to stay there through a zoom, the handles have to stay the same
+        // size on screen, and the scroll stops at the picture's edge.
+        doc.shotPath = "/tmp/postcard-example.png";
+        doc.shotWidth = 1600;
+        doc.shotHeight = 900;
+        doc.tool = "select";
+        doc.selectedId = "";
+        var stageItem = editor.exportTarget.children[0];
+        var layer = null;
+        for (var li = 0; li < stageItem.children.length; li++)
+            if (stageItem.children[li].hasOwnProperty("slop")) layer = stageItem.children[li];
+        win.check("starts fitted", editor.zoom + " " + editor.scroll.x + "," + editor.scroll.y, "1 0,0");
+        var handleBefore = layer ? layer.handle * layer.viewScale : 0;
+        var under = editor.shotAt(300, 200);
+        editor.zoomAt(2.5, 300, 200);
+        var after = editor.shotAt(300, 200);
+        win.check("zoom about a point keeps that shot pixel under it",
+                  Math.abs(under.x - after.x) < 0.01 && Math.abs(under.y - after.y) < 0.01, true);
+        win.check("the view is magnified", editor.zoom, 2.5);
+        win.check("and scrolled to show it", editor.scroll.x > 0 && editor.scroll.y > 0, true);
+        win.check("the handles stay screen-sized", layer ? Math.abs(layer.handle * layer.viewScale - handleBefore) < 0.01 : false, true);
+        editor.pan(-1e6, -1e6);
+        win.check("a scroll stops at the top left", editor.scroll.x + "," + editor.scroll.y, "0,0");
+        editor.pan(1e6, 1e6);
+        var atEnd = editor.scroll;
+        editor.pan(1, 1);
+        win.check("and at the bottom right", editor.scroll.x === atEnd.x && editor.scroll.y === atEnd.y && atEnd.x > 0, true);
+        editor.zoomAt(1e6, 0, 0);
+        // The stage's own scale is the fit times the zoom.
+        win.check("the zoom stops at four screen pixels a shot pixel",
+                  Math.abs(stageItem.viewScale - 4) < 0.01, true);
+        editor.zoomStep(-1);
+        win.check("a step is a quarter", Math.abs(stageItem.viewScale * 1.25 - 4) < 0.01, true);
+        editor.zoomReset();
+        win.check("0 fits it again", editor.zoom + " " + editor.scroll.x + "," + editor.scroll.y, "1 0,0");
+        // The footer's readout is a button back to the fit, only while zoomed.
+        function buttons(item, out) {
+            for (var i = 0; i < item.children.length; i++) {
+                var k = item.children[i];
+                if (k.hasOwnProperty("glyph") && k.hasOwnProperty("tip") && k.tip === "Back to fit (0)") out.push(k);
+                buttons(k, out);
+            }
+            return out;
+        }
+        var fit = buttons(editor, [])[0];
+        win.check("the footer carries a back-to-fit button", fit !== undefined, true);
+        win.check("hidden while the picture fits", fit ? fit.visible : true, false);
+        editor.statusText = "";          // a status message takes its place
+        editor.zoomAt(2, 100, 100);
+        win.check("shown while zoomed, with the zoom on it",
+                  fit ? fit.visible + " " + /^Zoom [0-9]+%$/.test(fit.label) : "", "true true");
+        if (fit) fit.clicked();
+        win.check("and a click fits the picture again", editor.zoom + " " + (fit ? fit.visible : ""), "1 false");
+        doc.resetHistory();
+        editor.zoomAt(2, 100, 100);
+        doc.resetHistory();
+        win.check("a new picture starts fitted", editor.zoom, 1);
 
         Qt.quit();
     })

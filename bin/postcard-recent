@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# postcard-recent list <dir>                         -> JSON array, newest first
+# postcard-recent record <dir> <id> <thumb> [<src> <name>]...   (doc.json on stdin)
+# postcard-recent forget <dir> <id>
+# The last few cards, each a directory under <dir>: the shots it was made of
+# (copied in, since a capture's scratch file goes with the next capture),
+# doc.json with the layout, style and marks, and thumb.png. `record` writes
+# one entry and prunes the oldest beyond the limit; `thumb` is an image to
+# make the thumbnail from, or "" to keep the one there (or make one from the
+# first shot). Each <src> <name> pair is a shot the card uses, copied in under
+# that name unless it is already there; any other shot in the entry is one the
+# card stopped using, and goes.
+set -uo pipefail
+
+action="${1:-list}"
+dir="${2:-}"
+[ -n "$dir" ] || { echo "No directory"; exit 1; }
+limit=5
+thumbEdge=320
+
+case "$action" in
+  list)
+    [ -d "$dir" ] || { echo "[]"; exit 0; }
+    found=0
+    for f in "$dir"/*/doc.json; do
+      [ -f "$f" ] || continue
+      d="$(dirname "$f")"
+      thumb=""; [ -f "$d/thumb.png" ] && thumb="$d/thumb.png"
+      jq -c --arg id "$(basename "$d")" --arg dir "$d" --arg thumb "$thumb" \
+         '. + {id: $id, dir: $dir, thumb: $thumb}' "$f" 2>/dev/null && found=1
+    done | jq -s 'sort_by(-(.stamp // 0))' 2>/dev/null || echo "[]"
+    exit 0
+    ;;
+
+  forget)
+    id="${3:-}"
+    [ -n "$id" ] && [ -d "$dir/$id" ] && rm -rf "${dir:?}/$id"
+    echo "ok"
+    exit 0
+    ;;
+
+  record)
+    id="${3:-}"; thumbSrc="${4:-}"
+    [ -n "$id" ] || { echo "No id"; exit 1; }
+    shift 4 2>/dev/null
+    entry="$dir/$id"
+    mkdir -p "$entry" || { echo "Could not make $entry"; exit 1; }
+
+    # The document first, from stdin, through a temporary name so a crash
+    # mid-write never leaves half a card behind.
+    cat > "$entry/doc.json.tmp" && mv -f "$entry/doc.json.tmp" "$entry/doc.json" \
+      || { echo "Could not write the document"; exit 1; }
+
+    # The shots, unless already in place: the same card recorded again has
+    # them from last time.
+    first=""
+    declare -A used=()
+    while [ "$#" -ge 2 ]; do
+      src="$1" name="$2"; shift 2
+      dest="$entry/$name"
+      used["$name"]=1
+      [ -z "$first" ] && first="$dest"
+      [ "$src" = "$dest" ] && continue
+      if [ -f "$dest" ] && [ "$(stat -c %s "$dest")" = "$(stat -c %s "$src" 2>/dev/null)" ]; then continue; fi
+      cp -f "$src" "$dest" 2>/dev/null || { echo "Could not copy $(basename "$src")"; exit 1; }
+    done
+    for f in "$entry"/*; do
+      name="${f##*/}"
+      case "$name" in doc.json|thumb.png) continue ;; esac
+      [ -f "$f" ] && [ -z "${used[$name]:-}" ] && rm -f -- "$f"
+    done
+
+    # A small picture for the shelf: the export when there is one, else the
+    # first shot, else whatever was there before.
+    if [ -n "$thumbSrc" ] && [ -f "$thumbSrc" ]; then
+      magick "$thumbSrc[0]" -resize "${thumbEdge}x${thumbEdge}>" -depth 8 "PNG32:$entry/thumb.png" 2>/dev/null || true
+    elif [ ! -f "$entry/thumb.png" ] && [ -n "$first" ] && [ -f "$first" ]; then
+      magick "$first[0]" -resize "${thumbEdge}x${thumbEdge}>" -depth 8 "PNG32:$entry/thumb.png" 2>/dev/null || true
+    fi
+    touch "$entry"
+
+    # Only the newest few are kept, by the time each was last recorded.
+    # NUL-separated, since a state directory may have spaces in its path.
+    n=0
+    while IFS= read -r -d '' f; do
+      n=$((n + 1))
+      [ "$n" -gt "$limit" ] && rm -rf -- "$f"
+    done < <(find "$dir" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\0' | sort -z -rn | cut -z -f2-)
+    echo "ok"
+    exit 0
+    ;;
+
+  *) echo "Unknown action $action"; exit 1 ;;
+esac

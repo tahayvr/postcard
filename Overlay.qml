@@ -20,6 +20,8 @@ Item {
     property bool capturing: false
     property bool picking: false        // the system file dialog is up
     property bool eyedropping: false    // hyprpicker is up
+    // Whether Last has a region to take; it is offered only then.
+    property bool hasLastRegion: false
 
     readonly property string pluginId: manifest && manifest.id ? manifest.id : "tahayvr.postcard"
     readonly property string pluginDir: decodeURIComponent(
@@ -39,6 +41,7 @@ Item {
         themeProc.running = true;
         wallpaperProc.running = true;
         themeListProc.running = true;
+        recentsProc.running = true;
     }
 
     // The desktop palette feeds the "Omarchy" code theme; refresh it when the
@@ -47,6 +50,13 @@ Item {
     Connections {
         target: Color
         function onBackgroundChanged() { themeProc.running = true; wallpaperProc.running = true; }
+    }
+    Process {
+        id: lastRegionProc
+        command: ["bash", root.pluginDir + "bin/postcard-capture", "--has-last"]
+        stdout: StdioCollector {
+            onStreamFinished: root.hasLastRegion = text.trim() === "yes"
+        }
     }
     Process {
         id: themeProc
@@ -108,6 +118,10 @@ Item {
         if (!payload || typeof payload !== "object") payload = {};
 
         opened = true;
+        lastRegionProc.running = true;
+        // Summoned afresh, perhaps by a hotkey whose Shift is still reported
+        // held: modifiers mean nothing until a key event says otherwise.
+        editor.modifiersTrusted = false;
 
         if (payload.path) {
             loadShot(String(payload.path));
@@ -124,17 +138,25 @@ Item {
                 editor.statusText = result === "bad delay"
                         ? "Delay must be 0 to 60 whole seconds" : "Busy, capture not started";
             }
+        } else if (payload.recent) {
+            var r = openRecent(Model.findRecent(root.recents, String(payload.recent)));
+            if (r !== "ok") { editor.statusText = "No such recent card"; doc.clearContent(); }
         } else {
             // A plain open always starts clean: the empty state offers
-            // region, code and file, and nothing from last time lingers.
+            // region, code, file and the recent cards, and nothing from
+            // last time lingers. What was there is on the shelf.
+            if (doc.hasContent) recordRecent("");
             editor.statusText = "";
             doc.clearContent();
+            root.listRecents();
         }
         focusEditor();
     }
 
     // Shell calls this on hide; dismiss() calls it too, so it must be idempotent.
     function close() {
+        // The card as it stands goes on the shelf, marks and all.
+        if (opened && doc.hasContent) recordRecent("");
         opened = false;
         hideTimer.stop();
         countdown.stop();
@@ -176,12 +198,17 @@ Item {
         var o;
         try { o = JSON.parse(json); } catch (e) { return "bad json"; }
         var applied = 0;
-        for (var k in o) if (settable.indexOf(k) !== -1) { doc[k] = o[k]; applied++; }
+        for (var k in o) {
+            if (settable.indexOf(k) === -1) continue;
+            if (k === "tool" && Model.TOOLS.indexOf(String(o[k])) === -1) continue;
+            doc[k] = o[k];
+            applied++;
+        }
         return applied ? "ok" : "nothing to set";
     }
 
     // annotate <json>: add annotations in screenshot pixels: one object
-    // {kind, x, y, w, h, color, width, text, size, font, index, strength, zoom}, or several as
+    // {kind, x, y, w, h, color, width, text, size, font, index, strength}, or several as
     // {"items": [...]} (the IPC CLI splits a bare top-level array on commas).
     function annotate(json) {
         var list;
@@ -191,19 +218,32 @@ Item {
         var added = 0;
         for (var i = 0; i < list.length; i++) {
             var o = list[i];
-            if (!o || !o.kind) continue;
+            // A kind this build cannot draw (a magnifier from before it became
+            // a spotlight mode) would be an invisible mark that still counts.
+            if (!o || Model.ANNOTATION_KINDS.indexOf(String(o.kind)) === -1) continue;
             var a = Model.newAnnotation(String(o.kind), Number(o.x) || 0, Number(o.y) || 0);
             a.w = Number(o.w) || 0;
             a.h = Number(o.h) || 0;
             a.color = o.color ? String(o.color) : String(doc.inkColor);
             a.width = Number(o.width) || doc.inkWidth;
             a.style = o.style ? String(o.style)
-                    : (a.kind === "arrow" ? String(doc.arrowStyle) : "");
+                    : (a.kind === "arrow" ? String(doc.arrowStyle)
+                       : a.kind === "redact" ? String(doc.redactStyle) : "");
             if (o.bend !== undefined && isFinite(Number(o.bend)))
                 a.bend = Model.arrowBend({ bend: Number(o.bend) });
+            if (a.kind === "box" || a.kind === "ellipse")
+                a.fill = o.fill === undefined ? doc.shapeFill : !!o.fill;
+            if (a.kind === "box")
+                a.corner = o.corner === undefined ? doc.shapeCorner : Model.clamp(Number(o.corner) || 0, 0, Model.MAX_CORNER);
             a.text = o.text ? String(o.text) : "";
             // A label sized by width, as before it had a size, keeps that size.
             if (a.kind === "text") a.font = o.font ? String(o.font) : String(doc.textFont);
+            if (a.kind === "text") {
+                a.textStyle = o.textStyle ? String(o.textStyle) : String(doc.textStyle);
+                // Its w is a wrap width, not a size; too narrow to wrap is a line.
+                a.w = a.w >= Model.MIN_TEXT_WRAP ? a.w : 0;
+                a.h = 0;
+            }
             if (a.kind === "text")
                 a.fontSize = Number(o.size) || (Number(o.width) ? Model.textSize(a)
                            : doc.textSize || Model.defaultTextSize(doc.shotWidth, doc.shotHeight));
@@ -215,17 +255,6 @@ Item {
                     var size = Math.max(22, Math.round(a.width * 9));
                     a.x -= size / 2; a.y -= size / 2; a.w = size; a.h = size;
                 }
-            }
-            // As when drawn: the box is the area to magnify, and the lens is
-            // set beside it.
-            if (a.kind === "magnify") {
-                var m = Model.magnifyFromDrag(a.x, a.y, a.x + a.w, a.y + a.h, Number(o.zoom));
-                var lens = Model.placeMagnifier(m.sx, m.sy, m.w / 2 / Model.magnifyZoom(Number(o.zoom)),
-                                                Number(o.zoom), doc.pictureArea);
-                if (m.w < 2 * Model.MIN_MAGNIFY) continue;
-                a.zoom = Model.magnifyZoom(Number(o.zoom));
-                a.sx = m.sx; a.sy = m.sy;
-                a.x = lens.x; a.y = lens.y; a.w = lens.w; a.h = lens.h;
             }
             doc.annotations.append(a);
             added++;
@@ -242,11 +271,13 @@ Item {
             // next call, not only what the editor shows as working.
             kind: doc.kind, opened: opened, capturing: capturing, picking: picking,
             busy: editor.busy || sheetProc.running || sizeProc.running || relayout.running
-                  || textProc.running || ocrProc.running,
+                  || textProc.running || ocrProc.running || rowsProc.running,
             hasContent: doc.hasContent,
             // Rendering is `busy`; encoding and writing the file comes after.
-            delivering: deliver.running || dragFile.running || shotCopy.running,
+            delivering: deliver.running || dragFile.running || shotCopy.running || recordProc.running
+                        || recentsProc.running,
             lastSaved: root.lastSaved,
+            recentId: doc.recentId, recents: root.recents.length,
             shotPath: doc.shotPath, shotWidth: doc.shotWidth, shotHeight: doc.shotHeight,
             outWidth: doc.outWidth, outHeight: doc.outHeight, annotations: doc.annotations.count,
             preset: doc.activePresetEntry.name, presetModified: doc.presetModified,
@@ -314,6 +345,7 @@ Item {
             Qt.callLater(function () {
                 editor.statusText = "Only the first " + Model.plural(text.split("\n").length, "line") + " fit on a card";
             });
+        doc.startCard();
         doc.clearAnnotations();
         doc.resetHistory();
         // A code card is its own picture; shots left from before would still
@@ -408,6 +440,7 @@ Item {
     function loadShot(path, recut) {
         if (!path) return;
         if (!recut) {
+            doc.startCard();
             doc.clearAnnotations();
             doc.resetHistory();
             doc.shotName = path.split("/").pop();
@@ -450,23 +483,25 @@ Item {
     // picture does not have yet. A request made while a sheet is being
     // composed waits, and the latest one wins.
     property var slotsWanted: null
-    function applySlots(slots, note) {
+    // keepView: the same shots laid out again, so the zoom stays where it is;
+    // a new shot, a crop or a reopened card goes back to the fit.
+    function applySlots(slots, note, keepView) {
         if (slots.length === 0) return "no shot";
-        if (sheetProc.running) { root.slotsWanted = { slots: slots, note: note }; return "ok"; }
+        if (sheetProc.running) { root.slotsWanted = { slots: slots, note: note, keepView: !!keepView }; return "ok"; }
         var L = Model.sheetLayout(slots, root.layoutOptions());
         if (!Model.needsSheet(slots)) {
-            root.commitSlots(slots, L, slots[0].source, note);
+            root.commitSlots(slots, L, slots[0].source, note, keepView);
             return "ok";
         }
         var args = Model.sheetArgs(slots, L);
-        sheetProc.pending = { slots: slots, layout: L, note: note,
+        sheetProc.pending = { slots: slots, layout: L, note: note, keepView: !!keepView,
                               dest: root.scratchDir + "/" + Model.sheetName(args) };
         sheetProc.command = ["bash", root.pluginDir + "bin/postcard-sheet", sheetProc.pending.dest].concat(args);
         sheetProc.running = true;
         return "ok";
     }
 
-    function commitSlots(slots, L, path, note) {
+    function commitSlots(slots, L, path, note, keepView) {
         // An edge color can arrive while the sheet is still being composed,
         // before its shot is on the document at all.
         slots = slots.map(function (s) {
@@ -484,7 +519,7 @@ Item {
         loadShot(path, true);
         // Undo is about the marks; stepping back past a change of layout
         // would put them where the shots no longer are.
-        doc.resetHistory();
+        doc.resetHistory(keepView);
         if (note) editor.statusText = note + (gone > 0 ? "  \u00b7  " + Model.plural(gone, "annotation") + " dropped" : "");
     }
 
@@ -497,11 +532,11 @@ Item {
                 if (text.trim() !== "ok") {
                     editor.statusText = text.trim().length ? text.trim() : "Could not lay the shots out";
                 } else {
-                    root.commitSlots(p.slots, p.layout, p.dest, p.note);
+                    root.commitSlots(p.slots, p.layout, p.dest, p.note, p.keepView);
                 }
                 var next = root.slotsWanted;
                 root.slotsWanted = null;
-                if (next) root.applySlots(next.slots, next.note);
+                if (next) root.applySlots(next.slots, next.note, next.keepView);
             }
         }
     }
@@ -511,7 +546,7 @@ Item {
     Timer {
         id: relayout
         interval: 250
-        onTriggered: if (doc.shotCount > 1) root.applySlots(doc.slots, "")
+        onTriggered: if (doc.shotCount > 1) root.applySlots(doc.slots, "", true)
     }
     Connections {
         target: doc
@@ -596,7 +631,7 @@ Item {
         if (i < 0 || j < 0 || j >= doc.shotCount) return "no move";
         var s = doc.slots.slice();
         s.splice(j, 0, s.splice(i, 1)[0]);
-        return applySlots(s, "");
+        return applySlots(s, "", true);
     }
 
     function uncropSlot(id) {
@@ -858,6 +893,197 @@ Item {
         function onCaptureCopiesChanged() { if (root.settingsReady) settingsSave.restart(); }
     }
 
+    // ---- recent cards ------------------------------------------------------
+    // The last five cards, kept with their marks under the state directory
+    // (bin/postcard-recent) so any of them can be reopened as it was, after a
+    // shell restart or a plugin reload too. A card is recorded when it is
+    // saved or copied, when the editor closes on it, and a moment after its
+    // marks settle. The shots are copied in, and the document then points
+    // at the copies, so a later crop reads a file that is still there.
+    readonly property string recentDir: {
+        var d = Quickshell.env("XDG_STATE_HOME");
+        return (d && d.length ? d : Quickshell.env("HOME") + "/.local/state") + "/postcard/recent";
+    }
+    property var recents: []
+
+    // A listing asked for while one is under way runs again after it, so a
+    // card recorded meanwhile is not missed.
+    function listRecents() {
+        if (recentsProc.running) { recentsProc.again = true; return; }
+        recentsProc.running = true;
+    }
+
+    Process {
+        id: recentsProc
+        property bool again: false
+        command: ["bash", root.pluginDir + "bin/postcard-recent", "list", root.recentDir]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                if (recentsProc.again) { recentsProc.again = false; Qt.callLater(root.listRecents); }
+                var list = [];
+                try { list = JSON.parse(text); } catch (e) { list = []; }
+                if (!Array.isArray(list)) list = [];
+                root.recents = list.map(function (o) {
+                    var m = Model.migrateConfig("recent", o);
+                    var c = Model.cleanRecent(m.data);
+                    if (c) {
+                        c.thumb = o.thumb ? String(o.thumb) : "";
+                        c.dir = String(o.dir || "");
+                        c.tooNew = !!m.tooNew;
+                    }
+                    return c;
+                }).filter(function (c) { return c !== null; });
+            }
+        }
+    }
+
+    // Every shot that is not in the entry yet goes there under a numbered
+    // name; the rest stay as they are.
+    property bool recordWanted: false
+    function recordRecent(thumbSrc) {
+        if (!doc.hasContent || doc.shotWidth === 0) return;
+        if (doc.kind === "shot" && doc.slots.some(function (s) { return !(s.w > 0); })) return;
+        if (recordProc.running) { root.recordWanted = true; return; }
+        var id = doc.recentId || Model.newGradientId();
+        var entry = root.recentDir + "/" + id;
+        var copies = [], args = [];
+        // Every shot is named, the ones already in the entry too, so the
+        // script can tell which copies the card no longer uses.
+        doc.slots.forEach(function (s) {
+            var inEntry = s.source.indexOf(entry + "/") === 0;
+            var name = inEntry ? s.source.slice(entry.length + 1) : Model.recentSourceName(s.id, s.source);
+            var dest = entry + "/" + name;
+            copies.push(Object.assign({}, s, { source: dest }));
+            args.push(s.source, name);
+        });
+        recordProc.id = id;
+        recordProc.gen = doc.cardGen;
+        recordProc.copies = copies;
+        recordProc.input = JSON.stringify(Model.configFile("recent", Model.recentDocument(doc, id, copies)));
+        recordProc.command = ["bash", root.pluginDir + "bin/postcard-recent", "record", root.recentDir,
+                              id, thumbSrc || ""].concat(args);
+        recordProc.running = true;
+    }
+
+    Process {
+        id: recordProc
+        property string id: ""
+        property int gen: 0
+        property var copies: []
+        property string input: ""
+        stdinEnabled: true
+        onRunningChanged: {
+            if (running) { write(input); stdinEnabled = false; }
+            else stdinEnabled = true;
+        }
+        stdout: StdioCollector {
+            onStreamFinished: {
+                // The document may be another card by now: a capture, a
+                // reopened card or a plain open came in while this ran.
+                if (text.trim() === "ok" && doc.cardGen === recordProc.gen) {
+                    doc.recentId = recordProc.id;
+                    // The document now reads its shots from the copies. The
+                    // picture on show is the first file itself when there is
+                    // one shot and no crop; a sheet stays where it is.
+                    if (doc.kind === "shot" && doc.slots.length === recordProc.copies.length) {
+                        var same = doc.slots.every(function (s, i) { return s.id === recordProc.copies[i].id; });
+                        if (same) {
+                            doc.slots = recordProc.copies.map(function (c, i) {
+                                return Object.assign({}, doc.slots[i], { source: c.source });
+                            });
+                            if (!Model.needsSheet(doc.slots) && doc.shotPath !== doc.slots[0].source) {
+                                doc.shotPath = doc.slots[0].source;
+                                doc.shotRevision += 1;
+                            }
+                        }
+                    }
+                    root.listRecents();
+                } else if (text.trim() === "ok") {
+                    root.listRecents();
+                } else if (text.trim().length) {
+                    console.warn("postcard: recent card not kept: " + text.trim());
+                }
+                if (root.recordWanted) { root.recordWanted = false; root.recordRecent(""); }
+            }
+        }
+    }
+
+    // Marks that have settled are worth keeping, a moment after they do.
+    Timer {
+        id: recentTouch
+        interval: 1500
+        onTriggered: root.recordRecent("")
+    }
+    Connections {
+        target: doc
+        function onHistoryAtChanged() { if (doc.hasContent) recentTouch.restart(); }
+    }
+
+    // A recent card back on the stage, as it was: its shots, layout, style
+    // and marks. The picture is composed afresh from the copies.
+    function openRecent(entry) {
+        if (!entry) return "unknown";
+        if (sheetProc.running || captureProc.running || root.capturing) return "busy";
+        opened = true;
+        doc.clearContent();
+        doc.tool = "select";
+        doc.applyStyle(entry.style);
+        doc.activePreset = Model.findPreset(doc.presets, entry.activePreset) ? entry.activePreset : Model.DEFAULT_PRESET;
+        // One written by a newer build is read and left alone: recording
+        // this card again starts an entry of its own.
+        var keep = entry.tooNew ? "" : entry.id;
+        doc.recentId = keep;
+        doc.textSize = entry.textSize;
+        if (entry.kind === "code") {
+            root.loadCode(entry.codeText);
+            doc.codeLang = entry.codeLang;
+            doc.frameTitle = entry.frameTitle;
+            doc.recentId = keep;
+            doc.replaceAnnotations(entry.marks);
+            doc.resetHistory();
+            editor.statusText = "Reopened " + entry.title;
+            root.focusEditor();
+            return "ok";
+        }
+        doc.layoutDir = entry.layout.dir;
+        doc.slotGap = entry.layout.gap;
+        doc.matchSizes = entry.layout.match;
+        doc.slotAlign = entry.layout.align;
+        doc.autoPalette = entry.palette.auto;
+        doc.shotPalette = entry.palette.shot;
+        doc.shotEdge = entry.palette.edge;
+        doc.shotName = entry.shotName;
+        doc.frameTitle = entry.frameTitle;
+        // The marks go on first, with no layout to move them from, and the
+        // picture follows once the sheet is composed.
+        doc.replaceAnnotations(entry.marks);
+        var r = root.applySlots(entry.slots, "Reopened " + entry.title);
+        root.focusEditor();
+        return r;
+    }
+
+    function forgetRecent(id) {
+        forgetProc.command = ["bash", root.pluginDir + "bin/postcard-recent", "forget", root.recentDir, String(id)];
+        forgetProc.running = true;
+        if (doc.recentId === id) doc.recentId = "";
+    }
+
+    Process {
+        id: forgetProc
+        stdout: StdioCollector {
+            onStreamFinished: root.listRecents()
+        }
+    }
+
+    // recent <id|1-5>: reopen a recent card; with no argument, list them.
+    function recent(arg) {
+        var k = String(arg || "").trim();
+        if (!k) return JSON.stringify(root.recents.map(function (c, i) {
+            return { n: i + 1, id: c.id, title: c.title, kind: c.kind, stamp: c.stamp, marks: c.marks.length };
+        }));
+        return root.openRecent(Model.findRecent(root.recents, k));
+    }
+
     // preset <name>: put a saved preset on the card, by name or id, or
     // "default". The command line splits on spaces, so a name with one is
     // typed with a dash or an underscore instead (Model.presetKey).
@@ -923,6 +1149,7 @@ Item {
                 var lines = text.trim().split("\n");
                 var path = lines[lines.length - 1].trim();
                 root.capturing = false;
+                lastRegionProc.running = true;
                 if (path.length > 0 && path.indexOf("/") === 0) {
                     if (captureProc.append) {
                         root.addShot(path);
@@ -1021,11 +1248,43 @@ Item {
             var a = Model.newAnnotation("redact", b.x, b.y);
             a.w = b.w;
             a.h = b.h;
+            a.style = String(doc.redactStyle);
             a.strength = Math.max(6, Math.round(b.h / 2.2));
             doc.annotations.append(a);
         }
         doc.annotationsEdited();
         editor.statusText = Redact.summarize(found.counts);
+    }
+
+    // A highlight just drawn takes the height of the text line under its
+    // middle, read off the picture by bin/postcard-rows once per stroke. A
+    // second stroke before the first is answered waits its turn.
+    property var snapWanted: null
+    function snapHighlight(uid, x, y) {
+        if (rowsProc.running) { root.snapWanted = { uid: uid, x: x, y: y }; return; }
+        rowsProc.uid = uid;
+        rowsProc.command = ["bash", root.pluginDir + "bin/postcard-rows", doc.shotPath,
+                            String(Math.round(x)), String(Math.round(y))];
+        rowsProc.running = true;
+    }
+
+    Process {
+        id: rowsProc
+        property string uid: ""
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var m = /^(\d+)\s+(\d+)/.exec(text.trim());
+                // The mark may be gone, or moved, by the time the row is read.
+                var i = doc.indexOfId(rowsProc.uid);
+                if (m && i >= 0 && doc.annotations.get(i).kind === "highlight") {
+                    var top = parseInt(m[1], 10), bottom = parseInt(m[2], 10);
+                    doc.updateAnnotation(rowsProc.uid, { y: top, h: bottom - top });
+                }
+                var next = root.snapWanted;
+                root.snapWanted = null;
+                if (next) root.snapHighlight(next.uid, next.x, next.y);
+            }
+        }
     }
 
     Process {
@@ -1217,6 +1476,8 @@ Item {
                     var dest = String(deliver.args[2]);
                     root.lastSaved = dest.slice(0, dest.lastIndexOf("/") + 1) + msg.slice(6);
                 }
+                // What was just rendered is the shelf's picture of this card.
+                root.recordRecent(String(deliver.args[1]));
             }
         }
     }
@@ -1233,6 +1494,12 @@ Item {
         if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return false;
 
         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+            // Shift+Enter starts another line; Enter alone is done.
+            if (event.modifiers & Qt.ShiftModifier) {
+                doc.annotations.setProperty(i, "text", a.text + "\n");
+                doc.annotationsEdited();
+                return true;
+            }
             doc.selectedId = "";
             return true;
         }
@@ -1254,7 +1521,7 @@ Item {
     }
 
     // Arrow keys move the selected marks a shot pixel at a time, ten with
-    // Shift. Like a drag, a magnifier's lens moves and what it shows stays.
+    // Shift.
     function nudgeSelected(event) {
         if (doc.selectedIds.length === 0) return false;
         if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return false;
@@ -1270,6 +1537,37 @@ Item {
         var d = doc.fitSelectionMove(dx, dy);
         doc.moveSelection(d.dx, d.dy, "");
         return true;
+    }
+
+    // With nothing selected the arrow keys scroll a zoomed view instead,
+    // further with Shift.
+    function panView(event) {
+        if (!doc.hasContent || editor.zoom <= 1) return false;
+        if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return false;
+        var step = (event.modifiers & Qt.ShiftModifier) ? 200 : 40;
+        var dx = 0, dy = 0;
+        switch (event.key) {
+        case Qt.Key_Left:  dx = -step; break;
+        case Qt.Key_Right: dx = step;  break;
+        case Qt.Key_Up:    dy = -step; break;
+        case Qt.Key_Down:  dy = step;  break;
+        default: return false;
+        }
+        editor.pan(dx, dy);
+        return true;
+    }
+
+    // Plus and minus step the zoom, 0 fits the picture again; with or
+    // without Ctrl, the way browsers take them.
+    function zoomKey(event) {
+        if (!doc.hasContent) return false;
+        if (event.modifiers & (Qt.AltModifier | Qt.MetaModifier)) return false;
+        switch (event.key) {
+        case Qt.Key_Plus: case Qt.Key_Equal: editor.zoomStep(1); return true;
+        case Qt.Key_Minus: case Qt.Key_Underscore: editor.zoomStep(-1); return true;
+        case Qt.Key_0: editor.zoomReset(); return true;
+        }
+        return false;
     }
 
     function handleKey(event) {
@@ -1294,6 +1592,8 @@ Item {
         }
 
         if (nudgeSelected(event)) return true;
+        if (panView(event)) return true;
+        if (zoomKey(event)) return true;
 
         if (event.modifiers & Qt.ControlModifier) {
             switch (event.key) {
@@ -1320,7 +1620,7 @@ Item {
                 if (event.modifiers & Qt.ShiftModifier) doc.redo(); else doc.undo();
                 return true;
             case Qt.Key_Y: doc.redo(); return true;
-            case Qt.Key_N: root.capture("region"); return true;
+            case Qt.Key_N: root.capture(event.modifiers & Qt.ShiftModifier ? "last" : "region"); return true;
             case Qt.Key_K: root.code(); return true;
             }
             return false;
@@ -1331,7 +1631,7 @@ Item {
         map[Qt.Key_R] = "box";     map[Qt.Key_O] = "ellipse";
         map[Qt.Key_T] = "text";    map[Qt.Key_S] = "step";
         map[Qt.Key_H] = "highlight"; map[Qt.Key_B] = "redact";
-        map[Qt.Key_L] = "spotlight"; map[Qt.Key_M] = "magnify";
+        map[Qt.Key_L] = "spotlight";
         if (doc.kind === "shot") map[Qt.Key_C] = "crop";
         if (map[event.key] !== undefined) {
             doc.tool = map[event.key];
@@ -1413,8 +1713,16 @@ Item {
                 doc: doc
                 systemThemes: root.systemThemes
                 saveDir: root.shotDir
+                hasLastRegion: root.hasLastRegion
                 manifest: root.manifest
+                recents: root.recents
                 radius: 0
+
+                onRecentRequested: function (id) {
+                    var r = root.openRecent(Model.findRecent(root.recents, id));
+                    if (r !== "ok") editor.statusText = r === "busy" ? "Busy, try again in a moment" : "Could not reopen that card";
+                }
+                onForgetRecentRequested: function (id) { root.forgetRecent(id); }
 
                 onEyedropRequested: function (done) { root.eyedrop(done); }
                 onCaptureRequested: function (mode) { root.capture(mode, mode === "fullscreen" ? CaptureDelay.seconds : 0); }
@@ -1437,11 +1745,17 @@ Item {
                 onCropRequested: root.crop("")
                 onUncropRequested: root.uncrop()
                 onCopyTextRequested: root.copyText()
+                onSnapRequested: function (uid, x, y) { root.snapHighlight(uid, x, y); }
             }
 
+            // The first key event the overlay sees carries a fresh picture of
+            // the modifiers; until then a Shift left over from the hotkey
+            // that summoned it may still read as held (Editor.modifiersTrusted).
             Keys.onPressed: function (event) {
+                editor.modifiersTrusted = true;
                 if (root.handleKey(event)) event.accepted = true;
             }
+            Keys.onReleased: editor.modifiersTrusted = true
         }
     }
 

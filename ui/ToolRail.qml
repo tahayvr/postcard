@@ -1,5 +1,4 @@
 import QtQuick
-import qs.Commons
 import "controls"
 
 Item {
@@ -19,7 +18,6 @@ Item {
         { key: "highlight", glyph: "\u{F0652}", name: "Highlight", hint: "H" },
         { key: "redact",    glyph: "\u{F00B5}", name: "Hide",      hint: "B" },
         { key: "spotlight", glyph: "\u{F05DD}", name: "Spotlight", hint: "L" },
-        { key: "magnify",   glyph: "\uf00e", name: "Magnify", hint: "M" },
         { key: "crop",      glyph: "\uf125", name: "Crop",  hint: "C", shotOnly: true }
     ]
 
@@ -42,20 +40,10 @@ Item {
                 required property var modelData
                 glyph: modelData.glyph
                 active: rail.doc.tool === modelData.key
-                tip: modelData.name
+                tip: modelData.name + " (" + modelData.hint + ")"
                 onClicked: {
                     rail.doc.tool = modelData.key;
                     rail.doc.selectedId = "";
-                }
-
-                Text {
-                    anchors.right: parent.right
-                    anchors.bottom: parent.bottom
-                    anchors.margins: 3
-                    text: parent.modelData.hint
-                    color: Ui.textFaint
-                    font.family: Style.font.family
-                    font.pixelSize: Style.font.caption * 0.8
                 }
             }
         }

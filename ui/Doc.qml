@@ -95,7 +95,17 @@ QtObject {
     property real inkWidth: 4
     property string arrowStyle: "straight"
     property string textFont: "mono"
-    property int magnifyZoom: Model.MAGNIFY_ZOOM
+    property string textStyle: "outline"      // Model.TEXT_STYLES, for the next label
+    property string redactStyle: "pixelate"   // Model.REDACT_STYLES, for the next hidden area
+    property bool shapeFill: false            // the next box or ellipse, filled in
+    property int shapeCorner: Model.DEFAULT_CORNER   // the next box's corners, shot pixels
+    property bool highlightSnap: true         // a highlight takes the height of the text line under it
+    // The recent card this document is, once it has been recorded or was
+    // reopened from one; "" until then, and again on a new picture.
+    property string recentId: ""
+    // Bumped whenever the document becomes another card, so a record that
+    // finishes afterwards can tell its card is gone and keep its id to itself.
+    property int cardGen: 0
     property int stepCounter: 0
     // The size a label was last pulled to, so the next one matches; 0 until
     // then, and a size that suits one shot may not suit the next.
@@ -155,8 +165,10 @@ QtObject {
     property rect cropRect: Qt.rect(0, 0, 0, 0)   // the selection being drawn
     readonly property bool cropUsable: Model.cropUsable(cropRect)
 
-    property string spotShape: "rect"       // rect | ellipse, for every spotlight
+    property string spotShape: "rect"       // Model.SPOT_SHAPES, for every spotlight
     property real spotDim: 55               // how dark the rest of the picture goes
+    property bool spotRing: false           // a white ring around every spotlight
+    property int spotZoom: 1                // 1, or Model.SPOT_ZOOMS: what each one magnifies
     property int spotlightCount: 0
     // A ListModel emits nothing a binding can follow, so the dim layer and the
     // count above ride on this instead.
@@ -284,7 +296,6 @@ QtObject {
         return out;
     }
 
-    // Like a drag, a magnifier's lens moves and what it shows stays.
     function moveSelection(dx, dy, except) {
         if (dx === 0 && dy === 0) return;
         for (var i = 0; i < annotations.count; i++) {
@@ -318,7 +329,10 @@ QtObject {
     function placeCopies(marks, steps) {
         if (marks.length === 0) return 0;
         var d = Model.pasteStep(shotWidth, shotHeight) * steps;
-        var made = marks.map(function (a) { return Model.duplicateAnnotation(a, d, d); });
+        // Set off from the originals, but never past the edge of the picture,
+        // where nothing can be drawn by hand: back the other way instead.
+        var off = Model.copyOffset(marks.map(boundsOf), d, pictureArea);
+        var made = marks.map(function (a) { return Model.duplicateAnnotation(a, off.dx, off.dy); });
         made.forEach(function (a) { annotations.append(a); });
         renumberSteps();
         selectMany(made.map(function (a) { return a.uid; }), made[made.length - 1].uid);
@@ -360,27 +374,43 @@ QtObject {
         });
     }
 
-    // Like the arrow style, the zoom is for the next magnifier and the one
-    // in hand.
-    function setMagnifyZoom(z) {
-        magnifyZoom = Model.magnifyZoom(z);
+    function setTextStyle(key) {
+        textStyle = key;
         selectedRows().forEach(function (a) {
-            if (a.kind === "magnify") updateAnnotation(a.uid, Model.magnifyRezoom(a, magnifyZoom));
+            if (a.kind === "text") updateAnnotation(a.uid, { textStyle: key });
         });
     }
 
-    // A crop moves the picture out from under everything drawn on it, a
-    // magnifier's area as well as its lens.
+    function setRedactStyle(key) {
+        redactStyle = key;
+        selectedRows().forEach(function (a) {
+            if (a.kind === "redact") updateAnnotation(a.uid, { style: key });
+        });
+    }
+
+    // Fill and corners for the next shape and the ones in hand; only a box
+    // has corners to round.
+    function setShapeFill(on) {
+        shapeFill = on;
+        selectedRows().forEach(function (a) {
+            if (a.kind === "box" || a.kind === "ellipse") updateAnnotation(a.uid, { fill: on });
+        });
+    }
+
+    function setShapeCorner(px) {
+        shapeCorner = px;
+        selectedRows().forEach(function (a) {
+            if (a.kind === "box") updateAnnotation(a.uid, { corner: px });
+        });
+    }
+
+    // A crop moves the picture out from under everything drawn on it.
     function shiftAnnotations(dx, dy) {
         if (dx === 0 && dy === 0) return;
         for (var i = 0; i < annotations.count; i++) {
             var a = annotations.get(i);
             annotations.setProperty(i, "x", a.x + dx);
             annotations.setProperty(i, "y", a.y + dy);
-            if (a.kind === "magnify") {
-                annotations.setProperty(i, "sx", a.sx + dx);
-                annotations.setProperty(i, "sy", a.sy + dy);
-            }
         }
         annotationsEdited();
     }
@@ -497,11 +527,16 @@ QtObject {
     }
 
     // The picture as it is now is where undo stops.
-    function resetHistory() {
+    // Also what the editor takes as a new picture: its zoom goes back to fit,
+    // unless keepView says it is the same shots laid out again.
+    signal historyReset()
+
+    function resetHistory(keepView) {
         settle.stop();
         historyPending = false;
         history = [snapshot()];
         historyAt = 0;
+        if (!keepView) historyReset();
     }
 
     function restore(s) {
@@ -560,7 +595,14 @@ QtObject {
         textSize = 0;
         markClipboard = [];
         pasteCount = 0;
+        startCard();
         resetHistory();
+    }
+
+    // A new card from here on: not the recent card that was on show.
+    function startCard() {
+        recentId = "";
+        cardGen += 1;
     }
 
     // Every styling setting back to its default; content and title stay.
@@ -569,9 +611,10 @@ QtObject {
         applyStyle(Model.DEFAULT_STYLE);
         activePreset = Model.DEFAULT_PRESET;
         tool = "select";
-        spotShape = "rect"; spotDim = 55;
+        spotShape = "rect"; spotDim = 55; spotRing = false; spotZoom = 1;
         inkColor = "#ff5f56"; inkWidth = 4; arrowStyle = "straight"; textFont = "mono";
-        magnifyZoom = Model.MAGNIFY_ZOOM;
+        textStyle = "outline"; redactStyle = "pixelate"; shapeFill = false;
+        shapeCorner = Model.DEFAULT_CORNER; highlightSnap = true;
     }
 
     function applyStyle(style) {

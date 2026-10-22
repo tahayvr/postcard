@@ -4,8 +4,7 @@ import "../../../ui"
 import "../../../lib/Model.js" as Model
 
 // Marks pressed and dragged the way a pointer does it. What has to hold is
-// that nothing leaves the picture, here a 400x300 shot with no padding, and
-// that a magnifier's area is taken before the handle lying over it.
+// that nothing leaves the picture, here a 400x300 shot with no padding.
 Item {
     width: 400
     height: 300
@@ -80,28 +79,37 @@ Item {
             compare(r.y + r.h, 300);
         }
 
-        function test_magnifier_area_is_taken_first_and_takes_the_lens() {
-            var u = add({ kind: "magnify", x: 0, y: 0, w: 80, h: 80, sx: 100, sy: 200, zoom: 2, width: 3 });
-            // Set up and to the right, its corner handle over the area.
-            doc.updateAnnotation(u, Model.placeMagnifier(100, 200, 20, 2, doc.pictureArea));
-            doc.selectedId = u;
-            wait(20);
-            var before = JSON.parse(JSON.stringify(row(u)));
-            drag(110, 195, -30, -40);
-            var r = row(u);
-            compare(r.sx - before.sx, -30);
-            compare(r.sy - before.sy, -40);
-            compare(r.x - before.x, -30, "the lens went along");
-            compare(r.y - before.y, -40);
-            compare(r.w, before.w, "and was not resized");
-        }
-
         function test_a_label_that_grows_slides_back() {
             var u = add({ kind: "text", x: 330, y: 50, text: "Hi", fontSize: 20, width: 3 });
             wait(30);
             doc.updateAnnotation(u, { text: "A much longer label" });
             wait(50);
             verify(row(u).x + doc.shownSizes[u].w <= 400.01);
+        }
+
+        function test_a_wrapping_label_is_widened_by_its_right_side() {
+            var u = add({ kind: "text", x: 50, y: 50, w: 120, text: "A label that wraps", fontSize: 16, width: 3 });
+            doc.selectedId = u;
+            wait(30);
+            // The right side, half way down the label, pulled out by 60.
+            var h = doc.shownSizes[u].h;
+            // Taken 3px out from the side and held there, so the side lands
+            // 3px short of where the pointer stops.
+            drag(170 + 3, 50 + h / 2, 60, 0);
+            compare(row(u).w, 180);
+            compare(row(u).x, 50, "the label itself stays put");
+        }
+
+        function test_a_filled_box_is_taken_from_its_middle() {
+            var u = add({ kind: "box", x: 100, y: 100, w: 80, h: 60, width: 4, fill: true });
+            drag(140, 130, 20, 10);
+            // The drag threshold eats the first pixels, so near rather than exact.
+            verify(row(u).x >= 115 && row(u).x <= 120, "moved by about 20: " + row(u).x);
+            verify(row(u).y >= 105 && row(u).y <= 110, "moved by about 10: " + row(u).y);
+            // A hollow one is empty in the middle and is not.
+            var v = add({ kind: "box", x: 200, y: 100, w: 80, h: 60, width: 4 });
+            drag(240, 130, 20, 10);
+            compare(row(v).x, 200);
         }
 
         function test_a_curve_flattens_to_fit() {

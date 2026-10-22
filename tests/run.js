@@ -32,6 +32,33 @@ function eq(actual, expected, what) {
 function ok(cond, what) { if (!cond) throw new Error(what || "expected truthy"); }
 function near(a, b, tol, what) { if (Math.abs(a - b) > tol) throw new Error((what || "value") + ": " + a + " not within " + tol + " of " + b); }
 
+// Whether an SVG path filled odd-even covers a point. Arcs are taken as
+// their chords, which only matters right on a curve, so points are chosen
+// clear of them.
+function fillsAt(d, x, y) {
+    const subpaths = [];
+    let cur = null, px = 0, py = 0;
+    const re = /([MLHVAZ])([^MLHVAZ]*)/g;
+    let m;
+    while ((m = re.exec(d))) {
+        const n = m[2].trim().split(/[\s,]+/).filter(Boolean).map(Number);
+        switch (m[1]) {
+        case "M": cur = []; subpaths.push(cur); px = n[0]; py = n[1]; cur.push([px, py]); break;
+        case "L": px = n[0]; py = n[1]; cur.push([px, py]); break;
+        case "H": px = n[0]; cur.push([px, py]); break;
+        case "V": py = n[0]; cur.push([px, py]); break;
+        case "A": px = n[5]; py = n[6]; cur.push([px, py]); break;
+        }
+    }
+    let crossings = 0;
+    for (const poly of subpaths)
+        for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+            const [xi, yi] = poly[i], [xj, yj] = poly[j];
+            if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) crossings++;
+        }
+    return crossings % 2 === 1;
+}
+
 // ---------------------------------------------------------------- Model.js
 
 const base = { shotWidth: 1000, shotHeight: 500, padding: 10, ratio: "auto", balance: true, frame: "none" };
@@ -163,18 +190,15 @@ test("a selection box takes whatever it touches", () => {
        "drawn backwards, it is where it shows");
     ok(Model.inSelectionBox({ kind: "text", x: 30, y: 30, w: 0, h: 0 }, 25, 25, 10, 10),
        "a label is taken at its corner");
-    const lens = { kind: "magnify", x: 200, y: 200, w: 40, h: 40, sx: 20, sy: 20 };
-    ok(Model.inSelectionBox(lens, 190, 190, 20, 20), "a magnifier by its lens");
-    ok(!Model.inSelectionBox(lens, 10, 10, 20, 20), "not by the area it shows");
 });
 
 test("a pasted mark is a copy of its own, set off from the original", () => {
-    const a = Model.newAnnotation("magnify", 10, 20);
-    a.sx = 5; a.sy = 6; a.text = "x";
+    const a = Model.newAnnotation("box", 10, 20);
+    a.w = 5; a.h = 6; a.text = "x";
     const c = Model.duplicateAnnotation(a, 15, 15);
     ok(c.uid !== a.uid, "a uid of its own");
     eq(c.x, 25); eq(c.y, 35);
-    eq(c.sx, 5, "a magnifier still shows the same area");
+    eq([c.w, c.h], [5, 6], "the same size");
     eq(c.text, "x");
     eq(a.x, 10, "the original is untouched");
     eq(Model.pasteStep(800, 500), 12);
@@ -272,6 +296,11 @@ test("marks follow their shot when the layout changes", () => {
     eq(r.marks[0].x, 10, "a mark on the second shot moves with it to the front");
     eq(r.marks[1].x, 1100, "an arrow's tail stays on the shot it started on");
     eq(r.marks[1].x + r.marks[1].w, 100, "and its tip on the other");
+    // A wrapping label whose width runs onto the next shot: the width is a
+    // width, not a corner on that shot, so it comes back as it was.
+    const wrap = Object.assign(Model.newAnnotation("text", 700, 50), { w: 200, fontSize: 20 });
+    const wr = Model.remapAnnotations([wrap], before, [a, b], swapped, [b, a]).marks[0];
+    eq([wr.x, wr.w], [1100, 200], "a wrapping label keeps its width");
 
     const alone = Model.slotLayout([a], o);
     r = Model.remapAnnotations([onB, across], before, [a, b], alone, [a]);
@@ -343,8 +372,8 @@ test("a code card takes at most CODE_MAX of the text, cut at a line", () => {
 });
 
 test("a copied annotation keeps every role and nothing else", () => {
-    const a = Model.newAnnotation("magnify", 3, 4);
-    a.sx = 9; a.text = "hi";
+    const a = Model.newAnnotation("text", 3, 4);
+    a.fontSize = 9; a.text = "hi";
     const row = Object.assign({ objectName: "", extra: 1 }, a);
     const c = Model.plainAnnotation(row);
     eq(JSON.stringify(c), JSON.stringify(a));
@@ -973,17 +1002,78 @@ test("the spotlight dim is one path with a hole per spotlight", () => {
     eq(Model.spotlightPath(100, 100, 0, 0, [{ x: 200, y: 0, w: 20, h: 20 }]).split("M").length - 1, 1,
        "a hole entirely outside is dropped");
 
-    // Reaching a rounded corner, the hole takes that corner's radius, so it
-    // follows the card instead of cutting across it.
+    // Reaching into a rounded corner, the hole is clipped to the card, so
+    // nothing outside the card is filled in: in the very corner, nor a few
+    // pixels along from it, which a hole taking the corner's radius only
+    // when it started exactly at the corner left as a dark wedge.
     const hole = (p) => p.split("M").slice(2).join("M");   // subpath 1 is the picture
-    ok(hole(Model.spotlightPath(100, 100, 12, 8, [{ x: 0, y: 0, w: 50, h: 50 }]))
-        .indexOf("A12,12 0 0 1 12,0Z") !== -1, "the hole rounds off the top left");
+    ok(!fillsAt(Model.spotlightPath(100, 100, 12, 8, [{ x: 0, y: 0, w: 50, h: 50 }]), 1, 1),
+       "the very corner, outside the card, is left alone");
+    const along = Model.spotlightPath(100, 100, 30, 30, [{ x: 5, y: 0, w: 50, h: 50 }]);
+    ok(!fillsAt(along, 6, 3), "nor a hole starting a little along the top");
+    ok(!fillsAt(along, 40, 20), "the hole is lit");
+    ok(fillsAt(along, 70, 70), "and the rest dimmed");
+    ok(!fillsAt(Model.spotlightPath(100, 100, 30, 30, [{ x: 0, y: 0, w: 20, h: 20, shape: "ellipse" }]), 4, 4),
+       "nor a small ellipse in the corner");
     ok(hole(Model.spotlightPath(100, 100, 12, 8, [{ x: 20, y: 20, w: 50, h: 50 }]))
         .indexOf("A") === -1, "a hole away from the corners stays square");
+
+    // Overlapping holes stay lit where they overlap, however many.
+    const two = Model.spotlightPath(100, 100, 0, 0, [{ x: 10, y: 10, w: 40, h: 40 }, { x: 30, y: 30, w: 40, h: 40 }]);
+    ok(!fillsAt(two, 40, 40), "lit where two overlap");
+    ok(!fillsAt(two, 20, 20) && !fillsAt(two, 60, 60), "and in each alone");
+    ok(fillsAt(two, 85, 15), "dimmed outside both");
+    const three = Model.spotlightPath(100, 100, 0, 0, [{ x: 10, y: 10, w: 40, h: 40 }, { x: 30, y: 30, w: 40, h: 40 },
+                                                       { x: 20, y: 20, w: 40, h: 40 }]);
+    ok(!fillsAt(three, 40, 40), "lit where three overlap");
+    ok(!fillsAt(three, 25, 45) && !fillsAt(three, 55, 35), "and where two of the three do");
 
     // An ellipse closes on itself, so the fill has an inside to leave alone.
     const oval = Model.spotlightPath(100, 100, 0, 0, [{ x: 0, y: 0, w: 100, h: 60, shape: "ellipse" }]);
     ok(oval.indexOf("M0,30A50,30 0 0 1 100,30A50,30 0 0 1 0,30Z") !== -1, "two half arcs");
+
+    // A rounded hole's corners follow its shorter side.
+    const rounded = hole(Model.spotlightPath(100, 100, 0, 0, [{ x: 20, y: 20, w: 50, h: 30, shape: "rounded" }]));
+    eq("M" + rounded, "M26,20H64A6,6 0 0 1 70,26V44A6,6 0 0 1 64,50H26A6,6 0 0 1 20,44V26A6,6 0 0 1 26,20Z",
+       "a fifth of 30 on every corner");
+    ok(!fillsAt(Model.spotlightPath(100, 100, 12, 0, [{ x: 0, y: 0, w: 50, h: 30, shape: "rounded" }]), 1, 1),
+       "a rounded hole in a sharper card corner is clipped to the card too");
+
+    // The ring follows the holes alone, not the picture's outline.
+    const cards = [{ x: 0, y: 0, w: 100, h: 100, top: 0, bottom: 0 }];
+    eq(Model.spotlightHolesPath(cards, [{ x: 20, y: 20, w: 30, h: 30 }]), "M20,20H50V50H20V20Z");
+    eq(Model.spotlightHolesPath(cards, [{ x: 20, y: 20, w: 30, h: 30 }], 1), "M21,21H49V49H21V21Z",
+       "inset by half its stroke, so it stays inside the hole");
+    eq(Model.spotlightHolesPath(cards, []), "", "no spotlight, no ring");
+    eq(Model.spotRingWidth(1920, 1080), 4);
+    eq(Model.spotRingWidth(300, 200), 2, "never thinner than 2px");
+
+    // The lens is handed the hole's own corners and the card to clip to.
+    const boxes = Model.spotlightHoleBoxes([{ x: 0, y: 0, w: 100, h: 100, top: 12, bottom: 0 }],
+        [{ x: 0, y: 0, w: 50, h: 30, shape: "rounded" }, { x: 40, y: 40, w: 20, h: 20, shape: "ellipse" }]);
+    eq([boxes[0].tl, boxes[0].tr, boxes[0].br, boxes[0].bl], [6, 6, 6, 6], "its own corners");
+    eq([boxes[0].clipped, boxes[1].clipped], [true, false], "clipped only where it reaches a rounded corner");
+    eq(boxes[0].card.top, 12);
+    eq(boxes[1].shape, "ellipse");
+});
+
+test("a magnifying spotlight shows the middle of its box at whole pixels", () => {
+    eq(Model.spotZoom(3), 3);
+    eq(Model.spotZoom("4"), 4, "as the command line sends it");
+    eq(Model.spotZoom(7), 1, "anything else is off");
+    eq(Model.spotZoom(1), 1);
+    eq(Model.spotLensArea(100, 100, 80, 40, 2), { x: 120, y: 110, w: 40, h: 20 }, "a quarter of the box, centred");
+    eq(Model.spotLensArea(0, 0, 100, 50, 3), { x: 34, y: 17, w: 33, h: 17 }, "rounded to whole pixels");
+    // The lens is exactly zoom times what it shows, so every block is the
+    // same size, centred on the hole and starting on a whole pixel.
+    const box = { x: 10.4, y: 20, w: 101, h: 40 };
+    const area = Model.spotLensArea(box.x, box.y, box.w, box.h, 2);
+    const lens = Model.spotLensBox(box, area, 2, 0);
+    eq([lens.w, lens.h], [area.w * 2, area.h * 2], "zoom times the area, whatever the box");
+    ok(Number.isInteger(lens.x) && Number.isInteger(lens.y), "on a whole pixel");
+    near(lens.x + lens.w / 2, box.x + box.w / 2, 1.5, "centred on the hole");
+    eq(Model.TOOLS.indexOf("magnify"), -1, "the magnifier is no tool any more");
+    ok(Model.TOOLS.indexOf("crop") !== -1 && Model.TOOLS.indexOf("select") !== -1);
 });
 
 test("every export format saves under its own extension", () => {
@@ -1020,7 +1110,7 @@ test("settings come back off disk at this version", () => {
 });
 
 test("every config file is versioned the same way", () => {
-    for (const kind of ["settings", "colors", "presets"]) {
+    for (const kind of ["settings", "colors", "presets", "recent"]) {
         const spec = Model.CONFIG_FILES[kind];
         eq(spec.migrations.length, spec.version, kind + ": a step for every version before this one");
         const m = Model.migrateConfig(kind, { a: 1 });
@@ -1067,7 +1157,7 @@ test("themes resolve, and anything unlisted is an installed Omarchy theme", () =
 });
 
 test("a capture is immediate unless it asks for a delay", () => {
-    for (const mode of ["region", "windows", "fullscreen", "smart"])
+    for (const mode of ["region", "windows", "fullscreen", "smart", "last"])
         eq(Model.captureRequest(mode), { mode, seconds: 0 });
     eq(Model.captureRequest("unknown").mode, "region", "an unknown mode is a region");
     eq(Model.captureRequest("").mode, "region");
@@ -1172,39 +1262,6 @@ test("a new gradient starts from the one on show", () => {
        "a mesh has no stops to start from");
 });
 
-test("a magnifier is drawn over what it shows, then set beside it", () => {
-    const m = Model.magnifyFromDrag(100, 100, 140, 120, 2);
-    eq([m.sx, m.sy], [120, 110], "the middle of the drag");
-    eq([m.x, m.y, m.w, m.h], [80, 70, 80, 80], "the lens over it, twice the size");
-    const src = Model.magnifySource({ x: m.x, y: m.y, w: m.w, h: m.h, sx: m.sx, sy: m.sy, zoom: 2 });
-    eq(src, { x: 120, y: 110, r: 20 });
-    eq(Model.magnifySource({ x: 0, y: 0, w: 120, h: 120, sx: 5, sy: 5, zoom: 7 }).r, 30,
-       "an unknown zoom is read as the default");
-
-    const lens = Model.placeMagnifier(200, 300, 20, 2, { x: 0, y: 0, w: 1000, h: 600 });
-    ok(lens.x > 200 && lens.y + lens.h < 300, "up and to the right when there is room");
-    eq(lens.w, 80);
-    const corner = Model.placeMagnifier(980, 20, 20, 2, { x: 0, y: 0, w: 1000, h: 600 });
-    ok(corner.x + corner.w < 980 && corner.y > 20, "down and to the left in the top right corner");
-    const cramped = Model.placeMagnifier(50, 50, 40, 4, { x: 0, y: 0, w: 200, h: 200 });
-    eq(cramped.w, 320, "too big for anywhere still keeps its size");
-
-    // A short picture has no room beside the area: the lens is pulled in, over it.
-    const strip = { x: -20, y: -10, w: 1000, h: 120 };
-    const low = Model.placeMagnifier(500, 50, 20, 2, strip);
-    ok(low.y >= strip.y && low.y + low.h <= strip.y + strip.h, "inside the picture top to bottom");
-    ok(low.x >= strip.x && low.x + low.w <= strip.x + strip.w, "and side to side");
-    // The padding counts: room above the shot is room.
-    const padded = Model.placeMagnifier(200, 30, 20, 2, { x: -200, y: -200, w: 1400, h: 1000 });
-    ok(padded.y < 0, "up and to the right, over the padding");
-
-    // Moving the area takes the lens along, and both stop at the first edge.
-    const mag = { kind: "magnify", x: 300, y: 100, w: 80, h: 80, sx: 250, sy: 220, zoom: 2 };
-    eq(Model.moveMagnifierArea(mag, 10, -5, { x: 0, y: 0, w: 1000, h: 600 }), { x: 310, y: 95, sx: 260, sy: 215 });
-    eq(Model.moveMagnifierArea(mag, 0, -500, { x: 0, y: 0, w: 1000, h: 600 }).y, 0, "the lens meets the top first");
-    eq(Model.moveMagnifierArea(mag, -500, 0, { x: 0, y: 0, w: 1000, h: 600 }).sx, 0, "the area meets the left first");
-});
-
 test("marks are kept inside the whole picture", () => {
     const geo = { cardX: 40, cardY: 30, inset: 10, chromeH: 20, frameW: 900, frameH: 700 };
     eq(Model.pictureArea(geo), { x: -50, y: -60, w: 900, h: 700 }, "starting over the padding and title bar");
@@ -1238,40 +1295,6 @@ test("marks are kept inside the whole picture", () => {
     ok(r.y >= tight.y - 0.01 && r.y < tight.y + 1, "to just inside the top");
     eq(Model.bendInside(curve, area), 0.5, "and left alone where it fits");
     eq(Model.bendInside(Object.assign({}, curve, { bend: -0.5 }), tight), -0.5, "a bend the other way had room");
-});
-
-test("a magnifier keeps whole pixels, and a new zoom keeps its lens", () => {
-    const m = Model.magnifyFromDrag(100.4, 100.2, 141, 120.6, 3);
-    eq([m.sx, m.sy], [121, 110], "the middle on a pixel");
-    eq(m.w % 6, 0, "the lens a whole number of source pixels across");
-    const lens = { kind: "magnify", x: 0, y: 0, w: 80, h: 80, sx: 50, sy: 50, zoom: 2, width: 3 };
-    eq(Model.resizeAnnotation(lens, "br", 83, 83).w % 4, 0, "resized in steps of whole source pixels");
-    const z = Model.magnifyRezoom(lens, 4);
-    eq(z.zoom, 4); eq(z.w, 80); eq([z.x, z.y], [0, 0]);
-    eq(Model.magnifySource({ x: z.x, y: z.y, w: z.w, h: z.h, sx: 50, sy: 50, zoom: 4 }).r, 10,
-       "showing less at more zoom");
-});
-
-test("a crop keeps a magnifier by the area it shows, not its lens", () => {
-    const m = { kind: "magnify", x: 500, y: 500, w: 80, h: 80, sx: 20, sy: 20, zoom: 2 };
-    ok(Model.overlapsRect(m, 0, 0, 100, 100), "its area is kept though the lens is cut away");
-    ok(!Model.overlapsRect({ kind: "magnify", x: 0, y: 0, w: 80, h: 80, sx: 500, sy: 500, zoom: 2 },
-                           0, 0, 100, 100), "and dropped when its area is cut away");
-});
-
-test("the line joins the lens and what it shows, edge to edge", () => {
-    const l = Model.magnifyLink(0, 0, 10, 30, 0, 5);
-    eq(l, { x1: 10, y1: 0, x2: 25, y2: 0 });
-    eq(Model.magnifyLink(0, 0, 10, 12, 0, 5), null, "no line when they touch");
-});
-
-test("a magnifier is resized from its corners and stays round", () => {
-    const mag = { kind: "magnify", x: 0, y: 0, w: 80, h: 80, sx: 200, sy: 200, zoom: 2, width: 3 };
-    eq(Model.resizeHandles(mag).length, 4, "corners only");
-    const big = Model.resizeAnnotation(mag, "br", 150, 100);
-    eq(big.w, big.h, "square, so the lens stays a circle");
-    ok(Model.hitAnnotation(mag, 40, 40, 4), "inside the lens");
-    ok(!Model.hitAnnotation(mag, 2, 2, 1), "not the corner of its box");
 });
 
 test("a style is the look of the card, not the marks or the tools", () => {
@@ -1317,6 +1340,164 @@ test("presets keep their order, and are found by id or by name", () => {
     eq(Model.findPreset(list, "Default").id, Model.DEFAULT_PRESET);
     eq(Model.findPreset(list, "nope"), null);
     eq(Model.forgetPreset(list, "a").map(p => p.id), ["b"]);
+});
+
+test("a hidden area is pixelated unless it says solid", () => {
+    eq(Model.redactStyle({ style: "solid" }), "solid");
+    eq(Model.redactStyle({ style: "" }), "pixelate", "rows from before it");
+    eq(Model.redactStyle({ style: "curved" }), "pixelate", "an arrow's style means nothing here");
+    eq(Model.redactStyle(null), "pixelate");
+    ok(Model.REDACT_STYLES.map(s => s.key).indexOf("solid") !== -1);
+    ok("redactStyle" in Model.SETTABLE, "settable");
+});
+
+test("a box is filled, rounded, or hollow with a hint of rounding", () => {
+    const a = Model.newAnnotation("box", 0, 0);
+    eq(a.fill, false); eq(a.corner, -1, "follows the stroke until given corners");
+    eq(Model.boxRadius(a, 4), 6, "the look every box had: 1.5 strokes");
+    eq(Model.boxRadius({ corner: 0, w: 50, h: 50 }, 4), 0, "square when asked");
+    eq(Model.boxRadius({ corner: 20, w: 50, h: 50 }, 4), 20);
+    eq(Model.boxRadius({ corner: 40, w: 50, h: 50 }, 4), 25, "never past half the shorter side");
+    eq(Model.boxRadius({ w: 50, h: 50 }, 4), 6, "a row with no corner role at all");
+    // A filled shape is hit anywhere inside it.
+    ok(Model.hitAnnotation({ kind: "box", x: 10, y: 10, w: 100, h: 50, width: 4, fill: true }, 60, 35, 6));
+    ok(Model.hitAnnotation({ kind: "ellipse", x: 0, y: 0, w: 100, h: 100, width: 4, fill: true }, 50, 50, 6));
+    ok(!Model.hitAnnotation({ kind: "ellipse", x: 0, y: 0, w: 100, h: 100, width: 4, fill: true }, 4, 4, 6),
+       "but not in the corner of its box");
+    for (const k of ["shapeFill", "shapeCorner"]) ok(k in Model.SETTABLE, k + " settable");
+});
+
+test("shift squares a drag and holds an arrow to 45 degrees", () => {
+    eq(Model.constrainDrag("box", 100, 40), { w: 40, h: 40 }, "the smaller extent");
+    eq(Model.constrainDrag("box", -100, 40), { w: -40, h: 40 }, "drawn leftwards");
+    eq(Model.constrainDrag("ellipse", 30, -90), { w: 30, h: -30 });
+    const flat = Model.constrainDrag("arrow", 100, 10);
+    near(flat.h, 0, 0.01, "nearly flat snaps flat"); near(flat.w, 100.5, 0.01, "keeping its length");
+    const diag = Model.constrainDrag("arrow", 100, 80);
+    near(diag.w, diag.h, 0.01, "nearly diagonal snaps to 45");
+    const up = Model.constrainDrag("arrow", 5, -100);
+    near(up.w, 0, 0.01); near(up.h, -100.1, 0.1);
+    eq(Model.constrainDrag("arrow", 0, 0), { w: 0, h: 0 }, "nothing yet is nothing");
+    for (const k of ["box", "ellipse", "spotlight", "highlight", "redact"]) ok(Model.drawsFromCentre(k), k);
+    ok(!Model.drawsFromCentre("arrow") && !Model.drawsFromCentre("text"));
+});
+
+test("alt draws from the middle out, and stops at the picture", () => {
+    eq(Model.centredDrag(100, 100, 30, 20), { x: 70, y: 80, w: 60, h: 40 });
+    eq(Model.centredDrag(100, 100, -30, -20), { x: 70, y: 80, w: 60, h: 40 }, "whichever way the pointer went");
+    const area = { x: 0, y: 0, w: 400, h: 300 };
+    eq(Model.centredDrag(20, 100, 50, 50, area), { x: 0, y: 50, w: 40, h: 100 }, "cut to the nearer edge on the left");
+    eq(Model.centredDrag(390, 290, 50, 50, area), { x: 380, y: 280, w: 20, h: 20 }, "and the far corner");
+    eq(Model.centredDrag(10, 100, 40, 40, area, true), { x: 0, y: 90, w: 20, h: 20 },
+       "with Shift too it stays square near an edge");
+});
+
+test("shift on a corner keeps the proportions", () => {
+    const fixed = { x: 0, y: 0 }, taken = { x: 100, y: 50 };
+    eq(Model.aspectLockedPoint(fixed, taken, { x: 200, y: 60 }), { x: 200, y: 100 }, "the wider pull wins");
+    eq(Model.aspectLockedPoint(fixed, taken, { x: 110, y: 150 }), { x: 300, y: 150 }, "or the taller");
+    eq(Model.aspectLockedPoint(fixed, taken, { x: -200, y: 60 }), { x: -200, y: 100 }, "pulled through the fixed corner");
+    eq(Model.aspectLockedPoint(fixed, { x: 100, y: 0 }, { x: 7, y: 9 }), { x: 7, y: 9 }, "a flat mark has no proportions");
+    eq(Model.oppositeCorner({ x: 10, y: 20, w: 100, h: 50 }, "br"), { x: 10, y: 20 });
+    eq(Model.oppositeCorner({ x: 10, y: 20, w: 100, h: 50 }, "tl"), { x: 110, y: 70 });
+    eq(Model.oppositeCorner({ x: 110, y: 70, w: -100, h: -50 }, "tr"), { x: 10, y: 70 }, "drawn backwards, as seen");
+});
+
+test("copies land beside the originals, inside the picture", () => {
+    const area = { x: 0, y: 0, w: 400, h: 300 };
+    eq(Model.copyOffset([{ x: 10, y: 10, w: 50, h: 50 }], 20, area), { dx: 20, dy: 20 }, "room: down and right");
+    eq(Model.copyOffset([{ x: 340, y: 10, w: 50, h: 50 }], 20, area), { dx: -20, dy: 20 }, "at the right edge: left instead");
+    eq(Model.copyOffset([{ x: 340, y: 240, w: 50, h: 50 }], 20, area), { dx: -20, dy: -20 }, "in the corner: up and left");
+    eq(Model.copyOffset([{ x: 345, y: 10, w: 50, h: 50 }], 20, area).dx, -20, "even a little room is less than the step");
+    eq(Model.copyOffset([{ x: 0, y: 0, w: 500, h: 50 }], 20, area).dx, 20, "a mark wider than the picture goes where it likes");
+});
+
+test("a label sits on an outline, a pill or nothing, and may wrap", () => {
+    eq(Model.textStyle({ textStyle: "pill" }), "pill");
+    eq(Model.textStyle({ textStyle: "" }), "outline", "rows from before it");
+    eq(Model.textStyle({ textStyle: "glow" }), "outline");
+    eq(Model.newAnnotation("text", 0, 0).textStyle, "");
+    ok("textStyle" in Model.SETTABLE);
+    // A wrapping label has a right-side handle for its width; a line has not.
+    const line = { kind: "text", x: 5, y: 5, w: 0, h: 0, fontSize: 20 };
+    const wrap = { kind: "text", x: 5, y: 5, w: 120, h: 0, fontSize: 20 };
+    eq(Model.resizeHandles(line, 100, 40).map(h => h.key), ["tl", "tr", "br", "bl"]);
+    eq(Model.resizeHandles(wrap, 120, 60).map(h => h.key), ["tl", "tr", "br", "bl", "r"]);
+    eq(Model.sideHandles(line), []); eq(Model.sideHandles(wrap), ["r"]);
+    eq(Model.sideHandles({ kind: "box" }), ["t", "r", "b", "l"]);
+    eq(Model.resizeAnnotation(wrap, "r", 205, 30, 120, 60), { w: 200 }, "the side sets the wrap width");
+    eq(Model.resizeAnnotation(wrap, "r", 6, 30, 120, 60), { w: Model.MIN_TEXT_WRAP }, "never narrower than a word");
+    const bigger = Model.resizeAnnotation(wrap, "br", 245, 125, 120, 60);
+    eq(bigger.fontSize, 40); eq(bigger.w, 240, "the width scales with the text");
+    ok(!("w" in Model.resizeAnnotation(line, "br", 205, 85, 100, 40)), "a line has no width to scale");
+});
+
+test("a recent card is written whole and read back clean", () => {
+    const doc = Object.assign({}, Model.DEFAULT_STYLE, {
+        kind: "shot", shotName: "a.png", frameTitle: "A", codeText: "", codeLang: "auto",
+        layoutDir: "column", slotGap: 6, matchSizes: false, slotAlign: "end",
+        autoPalette: ["#112233"], shotPalette: ["#445566"], shotEdge: "#778899",
+        activePreset: "default", textSize: 24, padding: 12,
+        snapshot: () => JSON.stringify([Object.assign(Model.newAnnotation("box", 1, 2), { w: 30, h: 40 })])
+    });
+    const slots = [Model.newSlot("/state/r1/0-a.png", 800, 600)];
+    const d = Model.recentDocument(doc, "r1", slots);
+    eq(d.id, "r1"); eq(d.kind, "shot"); eq(d.title, "0-a.png");
+    eq(d.layout, { dir: "column", gap: 6, match: false, align: "end" });
+    eq(d.style.padding, 12); eq(d.marks.length, 1); eq(d.palette.edge, "#778899");
+    ok(d.stamp > 0);
+
+    const back = Model.cleanRecent(JSON.parse(JSON.stringify(d)));
+    eq(back.slots[0].source, "/state/r1/0-a.png"); eq(back.slots[0].w, 800);
+    eq(back.marks[0].kind, "box"); eq(back.marks[0].w, 30);
+    eq(back.marks[0].corner, -1, "a role the row lacked gets its default");
+    eq(back.layout.dir, "column"); eq(back.textSize, 24);
+    eq(Model.cleanRecent({ id: "x", kind: "shot", slots: [] }), null, "a shot card with no shots is nothing");
+    eq(Model.cleanRecent({ id: "x", kind: "code", codeText: "" }), null, "nor a code card with no code");
+    eq(Model.cleanRecent({ id: "c", kind: "code", codeText: "fn main() {}" }).codeLang, "auto");
+    eq(Model.cleanRecent({ id: "x", kind: "shot", slots: [{ source: "/p", w: 10, h: 10 }],
+                           marks: [{ kind: "nope" }, { kind: "arrow", x: 1, y: 2, w: 3, h: 4 }] }).marks.length, 1,
+       "an unknown kind is dropped");
+    eq(Model.cleanRecent({ id: "x", kind: "shot", slots: [{ source: "/p", w: 10, h: 10, crop: { x: 0, y: 0, w: 4, h: 4 } }] })
+       .slots[0].crop, null, "a crop too small to be one is dropped");
+    eq(Model.recentSourceName("ab12", "/tmp/x/shot.png"), "ab12-shot.png");
+    const list = [{ id: "a" }, { id: "b" }];
+    eq(Model.findRecent(list, "b").id, "b"); eq(Model.findRecent(list, "2").id, "b", "by place, 1 is the newest");
+    eq(Model.findRecent(list, "3"), null); eq(Model.findRecent(list, ""), null);
+    eq(Model.RECENT_KEPT, 5);
+    ok("recent" in Model.CONFIG_FILES, "versioned like the other files");
+});
+
+test("the view zooms about the pointer and scrolls no further than the picture", () => {
+    // A 1600x900 stage fitted at 0.5 into an 840x490 viewport with a 20px
+    // margin, which it fills exactly, as Editor.qml's fit arranges.
+    eq(Model.zoomMax(0.5), 8, "one shot pixel is four screen pixels at most");
+    eq(Model.zoomMax(1), 4); eq(Model.zoomMax(5), 1, "never below 1");
+    near(Model.zoomStep(1, 1, 8), 1.25, 1e-9); near(Model.zoomStep(1.25, -1, 8), 1, 1e-9, "snaps back to exactly 1");
+    eq(Model.zoomStep(1, -1, 8), 1, "no zoom below the fit"); eq(Model.zoomStep(7.9, 1, 8), 8, "nor above the top");
+    near(Model.zoomWheel(1, 120, 8), 1.25, 1e-9, "a notch is a step");
+    near(Model.zoomWheel(1, 240, 8), 1.5625, 1e-9, "two notches are two");
+    near(Model.zoomWheel(1.25, -120, 8), 1, 1e-9);
+
+    let c = Model.viewContent(840, 490, 1600, 900, 0.5, 20);
+    eq([c.w, c.h, c.x, c.y], [840, 490, 20, 20], "a fitted stage fills the view");
+    c = Model.viewContent(840, 490, 1600, 900, 2, 20);
+    eq([c.w, c.h, c.x, c.y], [3240, 1840, 20, 20], "a zoomed one keeps the margin around it");
+    c = Model.viewContent(840, 490, 1600, 450, 0.5, 20);
+    eq([c.w, c.h, c.x, c.y], [840, 490, 20, 132.5], "and stays centred the way it still fits");
+
+    // (300, 200) in the view is stage (560, 360) at 0.5; at 2 that point is
+    // 1120 + 20 into the content, so the view scrolls to 840 to keep it at 300.
+    let s = Model.zoomAbout(840, 490, 1600, 900, 20, 0.5, 2, 300, 200, 0, 0);
+    eq([s.x, s.y], [840, 540]);
+    s = Model.zoomAbout(840, 490, 1600, 900, 20, 2, 0.5, 300, 200, 840, 540);
+    eq([s.x, s.y], [0, 0], "and back again");
+    s = Model.zoomAbout(840, 490, 1600, 900, 20, 0.5, 2, 830, 480, 0, 0);
+    eq([s.x, s.y], [2400, 1350], "the far corner lands the scroll at the end");
+    s = Model.zoomAbout(840, 490, 1600, 900, 20, 0.5, 2, 835, 485, 0, 0);
+    eq([s.x, s.y], [2400, 1350], "and no further");
+    eq(Model.clampScroll(-5, 99, { w: 1000, h: 500 }, 800, 450), { x: 0, y: 50 });
+    eq(Model.clampScroll(5, 5, { w: 800, h: 450 }, 800, 450), { x: 0, y: 0 }, "nothing to scroll when it fits");
 });
 
 test("the README's Keys table is the keys the About panel lists", () => {

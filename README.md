@@ -48,10 +48,16 @@ the picture that should not be public.
 **Annotation**
 
 - Arrows, boxes, ellipses, highlighter, text labels and numbered steps
-- Spotlight a rectangle or an ellipse and the rest of the screenshot dims,
-  leaving the background as it is
-- Magnify: drag over a detail and a zoomed lens (2×, 3× or 4×) appears beside it,
-  joined by a line; move the lens and the magnified spot separately
+- Boxes and ellipses hollow or filled, with a corner radius of your choosing;
+  hold `Shift` for a square or a 45° arrow, `Alt` to draw from the middle out
+- Labels outlined, on a cream pill, or plain; several lines with
+  `Shift+Enter`, or drag a box with the text tool and they wrap inside it
+- A highlight snaps to the line of text under it, so it sits on the line
+  rather than roughly across it
+- Spotlight a rectangle, a rounded rectangle or an ellipse and the rest of the
+  screenshot dims, leaving the background as it is; each spotlight can also
+  magnify what is under it 2×, 3× or 4× in its own place, and a white ring
+  around it is one click away
 - Drag to move, and they stay pinned to the screenshot when you reframe
 
 ![Annotations](assets/showcase/annotations.png)
@@ -62,7 +68,8 @@ the picture that should not be public.
   numbers, IBANs, IP addresses and phone numbers, each category switchable
 - Card numbers are Luhn-checked; dates, versions, hashes and loopback
   addresses are left alone
-- Pixelation is destructive, not a blur that can be undone
+- Pixelation is destructive, not a blur that can be undone; or hide with a
+  solid block, which leaks nothing at all
 - Or copy the screenshot's text to the clipboard
 
 ![Hiding sensitive data](assets/showcase/redaction.png)
@@ -92,6 +99,13 @@ the picture that should not be public.
   without editing (Settings)
 - The preview is the file
 
+**Recent cards**
+
+- The last five cards are kept with their marks, so any of them can be
+  reopened from the empty editor as it was, after a shell restart or a plugin
+  reload too; a card is kept when it is saved, copied or closed
+- Kept in `~/.local/state/postcard/recent`, shots included
+
 ## Install
 
 ```sh
@@ -111,7 +125,8 @@ before you enable it.
 
 Enabling the plugin puts a Postcard button 󰆟 in the bar. Left-click it to grab a
 region or window, middle-click to make a code card from the selected text, right-click
-for a menu: region, window, screen with an optional delay, code card, or the editor. Move it with:
+for a menu: region, window, the last region again, screen with an optional delay, code
+card, or the editor. Move it with:
 
 ```sh
 omarchy bar move tahayvr.postcard --section center
@@ -121,12 +136,15 @@ Or bind keys in `~/.config/hypr/bindings.lua`:
 
 ```lua
 o.bind("SUPER + SHIFT + PRINT", "Postcard", "omarchy-shell shell summon tahayvr.postcard '{\"capture\":\"region\"}'")
+o.bind("SUPER + SHIFT + ALT + PRINT", "Postcard last region", "omarchy-shell shell summon tahayvr.postcard '{\"capture\":\"last\"}'")
 o.bind("SUPER + SHIFT + C", "Postcard code card", "omarchy-shell shell summon tahayvr.postcard '{\"code\":true}'")
 o.bind("SUPER + SHIFT + S", "Postcard editor", "omarchy-shell shell toggle tahayvr.postcard '{}'")
 ```
 
 The buttons at the top of the editor grab a region, window or screen, make a
-code card, or open a file. A code card takes the primary selection, or the
+code card, or open a file. **Last** grabs the region you picked last time again,
+with no picker, for the same spot on every take; it falls back to the picker
+when there is none yet or the monitors have changed since. A code card takes the primary selection, or the
 clipboard if nothing is highlighted.
 
 The ⓘ button beside Settings lists the keys that no button shows, with
@@ -136,18 +154,24 @@ links to this guide, to report a problem, and to sponsor Postcard.
 
 | Key                                              | Action                                                                  |
 | ------------------------------------------------ | ----------------------------------------------------------------------- |
-| `V`, `A`, `R`, `O`, `T`, `S`, `H`, `B`, `L`, `M`, `C` | move, arrow, box, ellipse, text, step, highlight, hide, spotlight, magnify, crop |
+| `V`, `A`, `R`, `O`, `T`, `S`, `H`, `B`, `L`, `C` | move, arrow, box, ellipse, text, step, highlight, hide, spotlight, crop |
 | `Ctrl+C` / `Ctrl+S`                              | copy / save                                                             |
 | `Ctrl+C`, `Ctrl+X`, `Ctrl+V`, `Ctrl+D`           | With annotations selected: copy, cut, paste, duplicate them             |
 | `Ctrl+Shift+S`                                   | Save as, through the system file dialog                                 |
 | `Ctrl+Z`                                         | undo                                                                    |
 | `Ctrl+Shift+Z` / `Ctrl+Y`                        | redo                                                                    |
 | `Ctrl+N`                                         | Grab another region                                                     |
+| `Ctrl+Shift+N`                                   | Capture the last region again                                           |
 | `Ctrl+K`                                         | Code card from the selected text                                        |
 | `Delete`                                         | Remove the selected annotations                                         |
 | `Shift`+click, or drag a box with the move tool  | Select several annotations; `Ctrl+A` selects them all                    |
 | Arrow keys, `Shift`+arrows                       | Move the selected annotations 1px, or 10px                              |
-| `Enter`                                          | Finish typing a text label                                              |
+| `Ctrl`+wheel, `+` / `-`, `0`                     | Zoom in about the pointer, step the zoom, or fit the picture again      |
+| Middle drag, wheel, or arrows with nothing selected | Scroll a zoomed view                                                  |
+| `Shift` while drawing                            | A square box, ellipse or spotlight; an arrow held to 45°; a corner handle keeps the shape |
+| `Alt` while drawing                              | Draw from the middle out                                                |
+| Drag with the text tool                          | A label that wraps at that width                                        |
+| `Enter`, `Shift+Enter`                           | Finish typing a text label, or start a new line in it                   |
 | `Esc`                                            | Deselect, then close                                                    |
 
 ### Scripting
@@ -178,7 +202,7 @@ A call answers `ok`, or a short reason such as `busy`, `no shot` or `bad json`.
 
 ```sh
 # Getting a picture in
-omarchy-shell shell call tahayvr.postcard capture region        # region | windows | fullscreen | smart
+omarchy-shell shell call tahayvr.postcard capture region        # region | windows | fullscreen | smart | last
 omarchy-shell shell call tahayvr.postcard capture '{"mode":"fullscreen","delay":5}'   # after 0–60 seconds
 omarchy-shell shell call tahayvr.postcard edit ~/Pictures/Screenshots/shot.png
 omarchy-shell shell call tahayvr.postcard add region            # another shot beside it: a mode, a path, or file
@@ -188,13 +212,19 @@ omarchy-shell shell hide tahayvr.postcard                       # close, or canc
 
 # Styling
 omarchy-shell shell call tahayvr.postcard set '{"codeTheme":"nord","padding":8,"frame":"titlebar"}'
+omarchy-shell shell call tahayvr.postcard set '{"redactStyle":"solid","textStyle":"pill","shapeFill":true}'
 omarchy-shell shell call tahayvr.postcard preset social-post    # "Social Post": a dash for each space; or default
 
 # Marking up
-omarchy-shell shell call tahayvr.postcard annotate '{"kind":"box","x":40,"y":40,"w":300,"h":120}'
+omarchy-shell shell call tahayvr.postcard annotate '{"kind":"box","x":40,"y":40,"w":300,"h":120,"fill":true,"corner":12}'
+omarchy-shell shell call tahayvr.postcard annotate '{"kind":"text","x":40,"y":200,"w":300,"text":"Wraps\u0020here","textStyle":"pill"}'
 omarchy-shell shell call tahayvr.postcard crop '{"x":80,"y":40,"w":900,"h":600}'   # the shot under it; or '' for the selection
 omarchy-shell shell call tahayvr.postcard uncrop ''             # back to the whole picture
 omarchy-shell shell call tahayvr.postcard redact ''             # find and hide secrets
+
+# Recent cards
+omarchy-shell shell call tahayvr.postcard recent ''             # the last five, as JSON
+omarchy-shell shell call tahayvr.postcard recent 1              # reopen the newest (or an id)
 
 # Getting it out
 omarchy-shell shell call tahayvr.postcard save ''               # to the screenshot folder (and the clipboard)

@@ -8,9 +8,26 @@ here="$(cd "$(dirname "$0")" && pwd)"
 # seven, which knocked the live overlay out from under whoever was using it.
 out="${XDG_RUNTIME_DIR:-/tmp}/postcard-tests"
 mkdir -p "$out"
+
+# Qt 6.12 added a Color singleton to QtQuick, and a C++ singleton wins over
+# the stub's composite one whatever the import order, so under the plain qml
+# runtime every Color.* came out undefined. Quickshell resolves qs.Commons
+# first, so the shell itself is unaffected. The harness therefore runs on a
+# copy in the scratch directory whose `import QtQuick` stops at 6.11, before
+# Color existed; the plugin's own files are left as they are.
+root="$(cd "$here/../.." && pwd)"
+tree="$out/tree"
+rm -rf "$tree"
+mkdir -p "$tree/tests"
+cp -r "$root/ui" "$root/lib" "$root/assets" "$tree/"
+cp -r "$here" "$tree/tests/"
+if grep -q '"QtQuick/Color 6.12"' /usr/lib/qt6/qml/QtQuick/plugins.qmltypes 2>/dev/null; then
+  find "$tree" -name '*.qml' -exec sed -i 's/^import QtQuick$/import QtQuick 6.11/' {} +
+fi
+here="$tree/tests/qml"
 rm -f "$out/export.png" "$out/export-inset.png" "$out/export-gradient.png" "$out/export-mesh.png" \
-      "$out/export-odd.png" "$out/export-spot.png" "$out/export-spot-oval.png" "$out/export-magnify.png" \
-      "$out/export-two.png"
+      "$out/export-odd.png" "$out/export-spot.png" "$out/export-spot-oval.png" "$out/export-spot-ring.png" "$out/export-spot-edge.png" "$out/export-magnify.png" \
+      "$out/export-two.png" "$out/export-zoomed.png"
 
 # Synthetic screenshot: white left half, black right half, and a band of
 # 1px red/blue stripes through the middle that redaction has to destroy.
@@ -22,7 +39,7 @@ magick -size 400x200 xc:white -fill black -draw "rectangle 200,0 399,199" \
 # A second shot, and the sheet the two make side by side with an 8px gap,
 # as the overlay would compose it.
 magick -size 100x200 xc:'#0000ff' "$out/blue.png"
-bash "$here/../../bin/postcard-sheet" "$out/sheet.png" 508 200 \
+bash "$root/bin/postcard-sheet" "$out/sheet.png" 508 200 \
      "$out/shot.png" 0 0 400 200 400 200 0 0 "$out/blue.png" 0 0 100 200 100 200 408 0 >/dev/null
 
 # The offscreen platform can only use the software scene graph, which does
@@ -109,6 +126,22 @@ ref="$(px 195 135)"; same=1
 for x in 196 197 198 199; do [ "$(px $x 135)" = "$ref" ] || same=0; done
 [ $same = 1 ] && echo "ok   redaction is blocky ($ref)" || { echo "FAIL redaction still shows stripes"; fail=1; }
 
+# A solid hidden area at shot (260,60)-(280,80) is one flat dark block over
+# the stripes: the same near-black at its corner and its middle.
+expect "solid redaction is flat (corner)"   301 101    17  17  17   8
+expect "solid redaction is flat (middle)"   310 110    17  17  17   8
+
+# A filled box at shot (340,120) 40x40: yellow well inside, and with corners
+# of 20 its very corner stays the black of the shot.
+expect "filled box is solid inside"         400 180   255 255   0
+if [ $gpu = 1 ]; then
+  expect "rounded corner leaves the corner bare" 381 161   0   0   0
+fi
+
+# A label on a pill at shot (220,160): the pill's cream shows just inside its
+# top-left corner, before the first glyph.
+expect "text pill is cream"                 263 203   248 245 235  20
+
 # "Hello" at shot (20,150) puts dark pixels on the white half.
 minv="$(magick "$out/export.png" -crop 100x30+60+188 -colorspace gray -format "%[fx:int(255*minima)]" info:)"
 [ "$minv" -lt 90 ] && echo "ok   text label rendered (min $minv)" || { echo "FAIL text label missing (min $minv)"; fail=1; }
@@ -136,7 +169,7 @@ echo "$slog" | grep -q "^qml: ok   one of them being the tip" \
 
 # ---- marks under a pointer -------------------------------------------------
 # Presses and drags through Qt's own test events: moves and resizes held to
-# the picture, and a magnifier's area taken before the handle over it.
+# the picture.
 plog="$(cd "$here" && QT_FORCE_STDERR_LOGGING=1 QT_QPA_PLATFORM=offscreen timeout 60 /usr/lib/qt6/bin/qmltestrunner -import "$here/stubs" -input pointer 2>&1)"
 echo "$plog" | grep -E "^(PASS|FAIL!)" | grep -v "TestCase()" | sed -E 's/^PASS +: qmltestrunner::/ok   /; s/^FAIL! +: qmltestrunner::/FAIL /'
 echo "$plog" | grep -qE "^Totals: [0-9]+ passed, 0 failed" \
@@ -167,6 +200,27 @@ if [ $gpu = 1 ]; then
   fi
 fi
 
+# ---- zoomed view -----------------------------------------------------------
+# The first frame again, grabbed while the wrapper was displayed at 2.5x as
+# the editor's zoom shows it. The zoom is display only: the file has to be the
+# same size, the band still pixel for pixel, and in fact the very same picture.
+if [ $gpu = 1 ]; then
+  if [ -f "$out/export-zoomed.png" ]; then
+    zsize="$(magick "$out/export-zoomed.png" -format "%wx%h" info:)"
+    [ "$zsize" = "480x280" ] && echo "ok   zoomed export size $zsize" \
+      || { echo "FAIL zoomed export size: $zsize (want 480x280)"; fail=1; }
+    magick "$out/export-zoomed.png" -crop 50x100+140+90 +repage "$out/band-zoomed.png"
+    rmse="$(magick compare -metric RMSE "$out/band-source.png" "$out/band-zoomed.png" null: 2>&1 | awk '{print $1}')"
+    [ "${rmse%%.*}" = "0" ] && echo "ok   zoomed export is pixel-exact (band RMSE $rmse)" \
+      || { echo "FAIL zoomed export resamples the shot (band RMSE $rmse)"; fail=1; }
+    d="$(magick compare -metric AE "$out/export.png" "$out/export-zoomed.png" null: 2>&1 | cut -d' ' -f1)"
+    [ "$d" = "0" ] && echo "ok   zooming the view leaves the export untouched" \
+      || { echo "FAIL the zoomed view exported a different picture ($d pixels differ)"; fail=1; }
+  else
+    echo "FAIL zoomed export missing"; fail=1
+  fi
+fi
+
 # ---- odd size --------------------------------------------------------------
 # 444x244 is not a whole number of logical pixels at 1.25, 1.5 or 1.6, unlike
 # every size above. The file still has to come out that size, and the shot
@@ -189,8 +243,10 @@ fi
 # One spotlight over shot (10,10)-(90,190) at 60%, on the same 480x280 frame as
 # the first export: inside stays the shot, outside is the shot at 40% of its
 # brightness, and the background around the card must not move at all.
+# spot-ring is the same box rounded, with a 2px white ring inside its edge,
+# and a second one on the black half at shot (310..390, 150..190).
 if [ $gpu = 1 ]; then
-  for f in spot spot-oval; do
+  for f in spot spot-oval spot-ring; do
     [ -f "$out/export-$f.png" ] || { echo "FAIL $f export missing"; fail=1; continue; }
     spx() { magick "$out/export-$f.png" -format "%[fx:int(255*p{$1,$2}.r+0.5)] %[fx:int(255*p{$1,$2}.g+0.5)] %[fx:int(255*p{$1,$2}.b+0.5)]" info:; }
     sexpect() { local got; got="$(spx "$2" "$3")"; local tol=6
@@ -207,38 +263,83 @@ if [ $gpu = 1 ]; then
     sexpect "$f dims the black half outside"    390  60     0   0   0
     if [ "$f" = "spot" ]; then
       sexpect "$f keeps the corner of the hole"  54  54   255 255 255
-    else
+    elif [ "$f" = "spot-oval" ]; then
       # An ellipse inscribed in the same box: bright in the middle, and that
       # same corner now falls outside it.
       sexpect "$f dims the corner of the box"    54  54   102 102 102
+    else
+      # Corners of 16px (a fifth of 80): the box's very corner is cut off,
+      # clear of the ring along the arc.
+      sexpect "$f dims the corner of the box"    51  51   102 102 102
+      # Inside the second hole's top edge, over black: only the ring is
+      # bright there, the hole below it and the dim above it are black.
+      read -r r _ _ <<<"$(spx 390 191)"
+      (( r > 230 )) && echo "ok   $f draws the ring inside the edge ($r)" \
+        || { echo "FAIL $f has no ring inside the edge at 390,191: got $r"; fail=1; }
+      sexpect "$f leaves the hole black under the ring" 390 197    0   0   0
+      sexpect "$f puts none of the ring outside the hole" 390 186  0   0   0
+      sexpect "$f leaves the dim past the ring"  46 140   102 102 102
     fi
     sexpect "$f keeps the middle of the hole"    90 140   255 255 255
   done
 fi
 
-# ---- magnifier -------------------------------------------------------------
-# Two 2x lenses 40px across on the same 480x280 frame, shot pixel (sx,sy) at
-# (sx+40, sy+40). One shows shot (110..130, 90..110) of the stripes, which are
-# 2px each, so the lens draws them as 4px bands; the band from 70 to 73 is
-# red and the next is blue, and the two pixels either side of that edge must
-# be pure. A lens that smoothed its pixels would blend them. The other shows
-# the middle of a hidden block, so it must be one flat color.
+# ---- spotlights at a rounded corner and overlapping ---------------------------
+# The card has 40px corners. One spotlight at shot (5..65, 0..60) starts a
+# little along from the top left corner: export (46,42) is padding outside
+# the corner's arc and must stay the background, (70,70) is lit. Two more at
+# shot (100..140, 155..195) and (120..160, 160..200) overlap at shot
+# (120..140, 160..195): lit there and in each alone, dimmed outside both.
+if [ $gpu = 1 ]; then
+  if [ -f "$out/export-spot-edge.png" ]; then
+    f=spot-edge
+    sexpect "a spotlight near a rounded corner leaves the padding alone" 46 42  0 255   0
+    sexpect "and lights the hole"                                       70 70 255 255 255
+    sexpect "two overlapping spotlights are lit where they overlap"   170 220 255 255 255
+    sexpect "and in one alone"                                        145 210 255 255 255
+    sexpect "and dim outside both"                                    100 215 102 102 102
+  else
+    echo "FAIL spot-edge export missing"; fail=1
+  fi
+fi
+
+# ---- magnifying spotlight -------------------------------------------------
+# Two 40px spotlights at 4x on the same 480x280 frame, shot pixel (sx,sy) at
+# (sx+40, sy+40). One sits at shot (100..140, 80..120) and shows the 10px
+# around its middle, shot (115..125, 95..105), of the stripes, which are 2px
+# each, so it draws them as 8px bands; shot 117 is red and 118 blue, which
+# land at 151 and 152. The two pixels either side of that edge must be pure;
+# one that smoothed its pixels would blend them. The other sits at shot
+# (255..295, 70..110), centred just inside a hidden block, and shows shot
+# (270..280, 85..95) of it. Export 324 and 326 are clear of the hidden mark,
+# over stripes of different colors (red under 324, blue under 326), and both
+# show shot 277, inside one block: equal only if a lens is drawn there and
+# the block was pixelated before magnifying. A third sits at shot (38..78,
+# 20..60) beside a solid block at (20..60, 20..60); export (103,80) shows
+# shot (59,40), inside the block, over white past its edge: it has to be
+# the block's #111111.
 if [ $gpu = 1 ]; then
   if [ -f "$out/export-magnify.png" ]; then
     mpx() { magick "$out/export-magnify.png" -format "%[fx:int(255*p{$1,$2}.r+0.5)] %[fx:int(255*p{$1,$2}.g+0.5)] %[fx:int(255*p{$1,$2}.b+0.5)]" info:; }
-    read -r r1 g1 b1 <<<"$(mpx 73 211)"
-    read -r r2 g2 b2 <<<"$(mpx 74 211)"
+    read -r r1 g1 b1 <<<"$(mpx 151 140)"
+    read -r r2 g2 b2 <<<"$(mpx 152 140)"
     if (( r1 > 200 && b1 < 60 && b2 > 200 && r2 < 60 )); then
-      echo "ok   a lens shows each shot pixel as a crisp block"
+      echo "ok   a magnifying spotlight shows each shot pixel as a crisp block"
     else
-      echo "FAIL a lens smeared the stripes: got $r1 $g1 $b1 then $r2 $g2 $b2"; fail=1
+      echo "FAIL a magnifying spotlight smeared the stripes: got $r1 $g1 $b1 then $r2 $g2 $b2"; fail=1
     fi
-    read -r h1 _ k1 <<<"$(mpx 381 211)"
-    read -r h2 _ k2 <<<"$(mpx 383 211)"
+    read -r h1 _ k1 <<<"$(mpx 324 130)"
+    read -r h2 _ k2 <<<"$(mpx 326 130)"
     if (( h1 - h2 < 12 && h2 - h1 < 12 && k1 - k2 < 12 && k2 - k1 < 12 )); then
-      echo "ok   a lens over a hidden area shows the blocks, not what is under them"
+      echo "ok   a magnifying spotlight over a hidden area shows the blocks, not what is under them"
     else
-      echo "FAIL a lens showed a hidden area: got $h1 $k1 then $h2 $k2"; fail=1
+      echo "FAIL a magnifying spotlight showed a hidden area: got $h1 $k1 then $h2 $k2"; fail=1
+    fi
+    read -r s1 s2 s3 <<<"$(mpx 103 80)"
+    if (( s1 < 30 && s2 < 30 && s3 < 30 )); then
+      echo "ok   a magnifying spotlight over a solid block shows the block"
+    else
+      echo "FAIL a magnifying spotlight showed what a solid block covers: got $s1 $s2 $s3"; fail=1
     fi
   else
     echo "FAIL magnify export missing"; fail=1
